@@ -1,18 +1,20 @@
 from django.db.models import Q
-from rest_framework.decorators import api_view
+from rest_framework.decorators import api_view, permission_classes
 from rest_framework.response import Response
 from rest_framework import status
+from rest_framework.permissions import IsAuthenticated
+from apps.accounts.permissions import IsTeacherOrAdmin
+
 
 from .models import Student, StudentEnrollment, Attendance
 from .serializers import StudentSerializer, StudentEnrollmentSerializer, AttendanceSerializer
 
-
-
-
+    
 @api_view(["GET", "POST"])
+@permission_classes([IsAuthenticated])
 def student_list(request):
 
-    # READ: Get all students
+    # READ: Get all students    
     if request.method == "GET":
         students = Student.objects.all()
 
@@ -64,6 +66,7 @@ def student_list(request):
 
 # READ one student, UPDATE a student, or DELETE a student
 @api_view(["GET", "PUT", "PATCH", "DELETE"])
+@permission_classes([IsAuthenticated])
 def student_detail(request, student_id):
 
     # Find the student by database ID
@@ -210,6 +213,7 @@ def enrollment_detail(request, enrollment_id):
 
 
 @api_view(["GET", "POST"])
+@permission_classes([IsTeacherOrAdmin])
 def attendance_list(request):
     if request.method == "GET":
         attendance_records = Attendance.objects.all()
@@ -259,6 +263,7 @@ def attendance_list(request):
         )
 
 @api_view(["GET", "PUT", "PATCH", "DELETE"])
+@permission_classes([IsTeacherOrAdmin])
 def attendance_detail(request, attendance_id):
     try:
         attendance = Attendance.objects.get(id=attendance_id)

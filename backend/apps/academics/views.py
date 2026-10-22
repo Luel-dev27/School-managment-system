@@ -1,7 +1,8 @@
 from django.shortcuts import render
 
 # Create your views here.
-from rest_framework.decorators import api_view
+from rest_framework.decorators import api_view, permission_classes
+from apps.accounts.permissions import CanAccessResults, IsTeacherOrAdmin
 from rest_framework.response import Response
 from rest_framework import status
 
@@ -432,10 +433,27 @@ def teaching_assignment_detail(request, assignment_id):
 
 
 @api_view(["GET", "POST"])
+@permission_classes([CanAccessResults])
 def result_list(request):
     if request.method == "GET":
         results = Result.objects.all()
 
+        # If the logged-in user is a Student,
+        # only show that student's own results.
+        if request.user.groups.filter(name="Student").exists():
+            try:
+                student_profile = request.user.student_profile
+            except AttributeError:
+                return Response(
+                    {"error": "Student profile not found."},
+                    status=status.HTTP_403_FORBIDDEN,
+                )
+
+            results = results.filter(
+                enrollment__student=student_profile
+            )
+
+        # Query parameter filters
         student = request.query_params.get("student")
         subject = request.query_params.get("subject")
         term = request.query_params.get("term")
@@ -461,14 +479,21 @@ def result_list(request):
                 enrollment__class_section_id=section
             )
 
-        serializer = ResultSerializer(results, many=True)
+        serializer = ResultSerializer(
+            results,
+            many=True,
+        )
+
         return Response(serializer.data)
 
     if request.method == "POST":
-        serializer = ResultSerializer(data=request.data)
+        serializer = ResultSerializer(
+            data=request.data
+        )
 
         if serializer.is_valid():
             serializer.save()
+
             return Response(
                 serializer.data,
                 status=status.HTTP_201_CREATED,
@@ -480,14 +505,31 @@ def result_list(request):
         )
 
 @api_view(["GET", "PUT", "PATCH", "DELETE"])
+@permission_classes([CanAccessResults])
 def result_detail(request, result_id):
     try:
         result = Result.objects.get(id=result_id)
     except Result.DoesNotExist:
         return Response(
-            {"error": "Result not found"},
+            {"error": "Result not found."},
             status=status.HTTP_404_NOT_FOUND,
         )
+
+    # Students can only access their own result.
+    if request.user.groups.filter(name="Student").exists():
+        try:
+            student_profile = request.user.student_profile
+        except AttributeError:
+            return Response(
+                {"error": "Student profile not found."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        if result.enrollment.student != student_profile:
+            return Response(
+                {"error": "You cannot access this result."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
 
     if request.method == "GET":
         serializer = ResultSerializer(result)
@@ -511,4 +553,7 @@ def result_detail(request, result_id):
 
     if request.method == "DELETE":
         result.delete()
-        return Response(status=status.HTTP_204_NO_CONTENT)
+
+        return Response(
+            status=status.HTTP_204_NO_CONTENT,
+        )
