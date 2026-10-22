@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import Student
+from .models import Student, StudentEnrollment, Attendance  
 
 
 class StudentSerializer(serializers.ModelSerializer):
@@ -14,3 +14,29 @@ class StudentSerializer(serializers.ModelSerializer):
             "enrollment_date",
             "grade_level",
         ]
+        read_only_fields = ["id", "enrollment_date"]
+
+
+class StudentEnrollmentSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = StudentEnrollment
+        fields = [
+            "id",
+            "student",
+            "class_section",
+            "enrollment_date",
+            "status",
+        ]
+        read_only_fields = ["id", "enrollment_date"]
+
+
+class AttendanceSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Attendance
+        fields = [
+            "id",
+            "enrollment",
+            "date",
+            "status",
+        ]
+        read_only_fields = ["id"]

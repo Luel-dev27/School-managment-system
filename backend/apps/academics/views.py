@@ -1,3 +1,514 @@
 from django.shortcuts import render
 
 # Create your views here.
+from rest_framework.decorators import api_view
+from rest_framework.response import Response
+from rest_framework import status
+
+from .models import (AcademicYear,
+        GradeLevel, 
+        Subject, 
+        ClassSection, 
+        TeachingAssignment, 
+        Result)
+
+from .serializers import (
+    AcademicYearSerializer,
+    GradeLevelSerializer,
+    SubjectSerializer,
+    ClassSectionSerializer,
+    TeachingAssignmentSerializer,
+    ResultSerializer,
+)
+
+
+# -------------------------
+# Grade Levels API
+# -------------------------
+
+@api_view(["GET", "POST"])
+def grade_list(request):
+    if request.method == "GET":
+        grades = GradeLevel.objects.all().order_by("number")
+        serializer = GradeLevelSerializer(grades, many=True)
+        return Response(serializer.data)
+
+    serializer = GradeLevelSerializer(data=request.data)
+
+    if serializer.is_valid():
+        serializer.save()
+        return Response(
+            serializer.data,
+            status=status.HTTP_201_CREATED,
+        )
+
+    return Response(
+        serializer.errors,
+        status=status.HTTP_400_BAD_REQUEST,
+    )
+
+
+@api_view(["GET", "PUT", "PATCH", "DELETE"])
+def grade_detail(request, grade_id):
+    try:
+        grade = GradeLevel.objects.get(id=grade_id)
+    except GradeLevel.DoesNotExist:
+        return Response(
+            {"error": "Grade level not found"},
+            status=status.HTTP_404_NOT_FOUND,
+        )
+
+    if request.method == "GET":
+        serializer = GradeLevelSerializer(grade)
+        return Response(serializer.data)
+
+    if request.method == "PUT":
+        serializer = GradeLevelSerializer(
+            grade,
+            data=request.data,
+        )
+
+    elif request.method == "PATCH":
+        serializer = GradeLevelSerializer(
+            grade,
+            data=request.data,
+            partial=True,
+        )
+
+    if request.method in ["PUT", "PATCH"]:
+        if serializer.is_valid():
+            serializer.save()
+            return Response(serializer.data)
+
+        return Response(
+            serializer.errors,
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    if request.method == "DELETE":
+        try:
+            grade.delete()
+        except Exception:
+            return Response(
+                {
+                    "error": (
+                        "This grade level cannot be deleted "
+                        "because other records may depend on it."
+                    )
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+# -------------------------
+# Subjects API
+# -------------------------
+
+@api_view(["GET", "POST"])
+def subject_list(request):
+    if request.method == "GET":
+        subjects = Subject.objects.all().order_by("name")
+        serializer = SubjectSerializer(subjects, many=True)
+        return Response(serializer.data)
+
+    serializer = SubjectSerializer(data=request.data)
+
+    if serializer.is_valid():
+        serializer.save()
+        return Response(
+            serializer.data,
+            status=status.HTTP_201_CREATED,
+        )
+
+    return Response(
+        serializer.errors,
+        status=status.HTTP_400_BAD_REQUEST,
+    )
+
+
+@api_view(["GET", "PUT", "PATCH", "DELETE"])
+def subject_detail(request, subject_id):
+    try:
+        subject = Subject.objects.get(id=subject_id)
+    except Subject.DoesNotExist:
+        return Response(
+            {"error": "Subject not found"},
+            status=status.HTTP_404_NOT_FOUND,
+        )
+
+    if request.method == "GET":
+        serializer = SubjectSerializer(subject)
+        return Response(serializer.data)
+
+    if request.method == "PUT":
+        serializer = SubjectSerializer(
+            subject,
+            data=request.data,
+        )
+
+    elif request.method == "PATCH":
+        serializer = SubjectSerializer(
+            subject,
+            data=request.data,
+            partial=True,
+        )
+
+    if request.method in ["PUT", "PATCH"]:
+        if serializer.is_valid():
+            serializer.save()
+            return Response(serializer.data)
+
+        return Response(
+            serializer.errors,
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    if request.method == "DELETE":
+        try:
+            subject.delete()
+        except Exception:
+            return Response(
+                {
+                    "error": (
+                        "This subject cannot be deleted "
+                        "because other records may depend on it."
+                    )
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+# -------------------------
+# Academic Years API
+# -------------------------
+
+@api_view(["GET", "POST"])
+def academic_year_list(request):
+    if request.method == "GET":
+        years = AcademicYear.objects.all().order_by("-start_date")
+        serializer = AcademicYearSerializer(years, many=True)
+        return Response(serializer.data)
+
+    serializer = AcademicYearSerializer(data=request.data)
+
+    if serializer.is_valid():
+        serializer.save()
+        return Response(
+            serializer.data,
+            status=status.HTTP_201_CREATED,
+        )
+
+    return Response(
+        serializer.errors,
+        status=status.HTTP_400_BAD_REQUEST,
+    )
+
+
+@api_view(["GET", "PUT", "PATCH", "DELETE"])
+def academic_year_detail(request, year_id):
+    try:
+        year = AcademicYear.objects.get(id=year_id)
+    except AcademicYear.DoesNotExist:
+        return Response(
+            {"error": "Academic year not found"},
+            status=status.HTTP_404_NOT_FOUND,
+        )
+
+    if request.method == "GET":
+        serializer = AcademicYearSerializer(year)
+        return Response(serializer.data)
+
+    if request.method == "PUT":
+        serializer = AcademicYearSerializer(
+            year,
+            data=request.data,
+        )
+
+    elif request.method == "PATCH":
+        serializer = AcademicYearSerializer(
+            year,
+            data=request.data,
+            partial=True,
+        )
+
+    if request.method in ["PUT", "PATCH"]:
+        if serializer.is_valid():
+            serializer.save()
+            return Response(serializer.data)
+
+        return Response(
+            serializer.errors,
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    if request.method == "DELETE":
+        try:
+            year.delete()
+        except Exception:
+            return Response(
+                {
+                    "error": (
+                        "This academic year cannot be deleted "
+                        "because other records may depend on it."
+                    )
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+@api_view(["GET", "POST"])
+def section_list(request):
+    if request.method == "GET":
+        sections = ClassSection.objects.select_related(
+            "grade_level",
+            "academic_year",
+        )
+
+        serializer = ClassSectionSerializer(sections, many=True)
+        return Response(serializer.data)
+
+    elif request.method == "POST":
+        serializer = ClassSectionSerializer(data=request.data)
+
+        if serializer.is_valid():
+            serializer.save()
+            return Response(
+                serializer.data,
+                status=status.HTTP_201_CREATED,
+            )
+
+        return Response(
+            serializer.errors,
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+@api_view(["GET", "PUT", "PATCH", "DELETE"])
+def section_detail(request, section_id):
+    try:
+        section = ClassSection.objects.get(id=section_id)
+    except ClassSection.DoesNotExist:
+        return Response(
+            {"error": "Class section not found"},
+            status=status.HTTP_404_NOT_FOUND,
+        )
+
+    if request.method == "GET":
+        serializer = ClassSectionSerializer(section)
+        return Response(serializer.data)
+
+    elif request.method == "PUT":
+        serializer = ClassSectionSerializer(
+            section,
+            data=request.data,
+        )
+
+    elif request.method == "PATCH":
+        serializer = ClassSectionSerializer(
+            section,
+            data=request.data,
+            partial=True,
+        )
+
+    if request.method in ["PUT", "PATCH"]:
+        if serializer.is_valid():
+            serializer.save()
+            return Response(serializer.data)
+
+        return Response(
+            serializer.errors,
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    elif request.method == "DELETE":
+        try:
+            section.delete()
+            return Response(status=status.HTTP_204_NO_CONTENT)
+        except Exception:
+            return Response(
+                {
+                    "error": (
+                        "Cannot delete this section because "
+                        "other records may depend on it."
+                    )
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+@api_view(["GET", "POST"])
+def teaching_assignment_list(request):
+    if request.method == "GET":
+        assignments = TeachingAssignment.objects.select_related(
+            "teacher",
+            "subject",
+            "class_section",
+            "class_section__grade_level",
+            "class_section__academic_year",
+        )
+
+        teacher_id = request.query_params.get("teacher")
+        if teacher_id:
+            assignments = assignments.filter(teacher_id=teacher_id)
+
+        subject_id = request.query_params.get("subject")
+        if subject_id:
+            assignments = assignments.filter(subject_id=subject_id)
+
+        section_id = request.query_params.get("section")
+        if section_id:
+            assignments = assignments.filter(
+                class_section_id=section_id
+            )
+
+        serializer = TeachingAssignmentSerializer(
+            assignments,
+            many=True,
+        )
+        return Response(serializer.data)
+
+    elif request.method == "POST":
+        serializer = TeachingAssignmentSerializer(data=request.data)
+
+        if serializer.is_valid():
+            serializer.save()
+            return Response(
+                serializer.data,
+                status=status.HTTP_201_CREATED,
+            )
+
+        return Response(
+            serializer.errors,
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+
+@api_view(["GET", "PUT", "PATCH", "DELETE"])
+def teaching_assignment_detail(request, assignment_id):
+    try:
+        assignment = TeachingAssignment.objects.get(
+            id=assignment_id
+        )
+    except TeachingAssignment.DoesNotExist:
+        return Response(
+            {"error": "Teaching assignment not found"},
+            status=status.HTTP_404_NOT_FOUND,
+        )
+
+    if request.method == "GET":
+        serializer = TeachingAssignmentSerializer(assignment)
+        return Response(serializer.data)
+
+    elif request.method == "PUT":
+        serializer = TeachingAssignmentSerializer(
+            assignment,
+            data=request.data,
+        )
+
+    elif request.method == "PATCH":
+        serializer = TeachingAssignmentSerializer(
+            assignment,
+            data=request.data,
+            partial=True,
+        )
+
+    if request.method in ["PUT", "PATCH"]:
+        if serializer.is_valid():
+            serializer.save()
+            return Response(serializer.data)
+
+        return Response(
+            serializer.errors,
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    elif request.method == "DELETE":
+        assignment.delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+@api_view(["GET", "POST"])
+def result_list(request):
+    if request.method == "GET":
+        results = Result.objects.all()
+
+        student = request.query_params.get("student")
+        subject = request.query_params.get("subject")
+        term = request.query_params.get("term")
+        section = request.query_params.get("section")
+
+        if student:
+            results = results.filter(
+                enrollment__student_id=student
+            )
+
+        if subject:
+            results = results.filter(
+                subject_id=subject
+            )
+
+        if term:
+            results = results.filter(
+                term=term
+            )
+
+        if section:
+            results = results.filter(
+                enrollment__class_section_id=section
+            )
+
+        serializer = ResultSerializer(results, many=True)
+        return Response(serializer.data)
+
+    if request.method == "POST":
+        serializer = ResultSerializer(data=request.data)
+
+        if serializer.is_valid():
+            serializer.save()
+            return Response(
+                serializer.data,
+                status=status.HTTP_201_CREATED,
+            )
+
+        return Response(
+            serializer.errors,
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+@api_view(["GET", "PUT", "PATCH", "DELETE"])
+def result_detail(request, result_id):
+    try:
+        result = Result.objects.get(id=result_id)
+    except Result.DoesNotExist:
+        return Response(
+            {"error": "Result not found"},
+            status=status.HTTP_404_NOT_FOUND,
+        )
+
+    if request.method == "GET":
+        serializer = ResultSerializer(result)
+        return Response(serializer.data)
+
+    if request.method in ["PUT", "PATCH"]:
+        serializer = ResultSerializer(
+            result,
+            data=request.data,
+            partial=request.method == "PATCH",
+        )
+
+        if serializer.is_valid():
+            serializer.save()
+            return Response(serializer.data)
+
+        return Response(
+            serializer.errors,
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    if request.method == "DELETE":
+        result.delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)
