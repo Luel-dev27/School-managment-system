@@ -1,4 +1,5 @@
 from django.urls import path
+
 from .views import (
     grade_list,
     grade_detail,
@@ -11,13 +12,19 @@ from .views import (
     teaching_assignment_list,
     teaching_assignment_detail,
     result_list,
-    result_detail
+    result_detail,
+    timetable_list,
+    timetable_detail,
 )
 
 
 urlpatterns = [
     # Grade levels
-    path("grades/", grade_list, name="grade-list"),
+    path(
+        "grades/",
+        grade_list,
+        name="grade-list",
+    ),
     path(
         "grades/<int:grade_id>/",
         grade_detail,
@@ -25,7 +32,11 @@ urlpatterns = [
     ),
 
     # Subjects
-    path("subjects/", subject_list, name="subject-list"),
+    path(
+        "subjects/",
+        subject_list,
+        name="subject-list",
+    ),
     path(
         "subjects/<int:subject_id>/",
         subject_detail,
@@ -33,32 +44,62 @@ urlpatterns = [
     ),
 
     # Academic years
-    path("years/", academic_year_list, name="academic-year-list"),
+    path(
+        "years/",
+        academic_year_list,
+        name="academic-year-list",
+    ),
     path(
         "years/<int:year_id>/",
         academic_year_detail,
         name="academic-year-detail",
     ),
-    # Sections
-    path("sections/", section_list, name="section-list"),
+
+    # Class sections
     path(
-    "sections/<int:section_id>/",
-    section_detail,
-    name="section-detail",
-    ),
-    # Teaching Assignments
-    path(
-    "teaching-assignments/",
-    teaching_assignment_list,
-    name="teaching-assignment-list",
+        "sections/",
+        section_list,
+        name="section-list",
     ),
     path(
-    "teaching-assignments/<int:assignment_id>/",
-    teaching_assignment_detail,
-    name="teaching-assignment-detail",
+        "sections/<int:section_id>/",
+        section_detail,
+        name="section-detail",
+    ),
+
+    # Teaching assignments
+    path(
+        "teaching-assignments/",
+        teaching_assignment_list,
+        name="teaching-assignment-list",
+    ),
+    path(
+        "teaching-assignments/<int:assignment_id>/",
+        teaching_assignment_detail,
+        name="teaching-assignment-detail",
     ),
 
     # Results
-    path("results/", result_list, name="result-list"),
-    path("results/<int:result_id>/", result_detail, name="result-detail"),
+    path(
+        "results/",
+        result_list,
+        name="result-list",
+    ),
+    path(
+        "results/<int:result_id>/",
+        result_detail,
+        name="result-detail",
+    ),
+
+    # Timetables
+    path(
+        "timetables/",
+        timetable_list,
+        name="timetable-list",
+    ),
+    path(
+        "timetables/<int:timetable_id>/",
+        timetable_detail,
+        name="timetable-detail",
+    ),
 ]

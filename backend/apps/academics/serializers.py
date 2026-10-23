@@ -1,3 +1,4 @@
+from django.core.exceptions import ValidationError as DjangoValidationError
 from rest_framework import serializers
 from .models import (AcademicYear, 
                      GradeLevel, 
@@ -5,6 +6,7 @@ from .models import (AcademicYear,
                      ClassSection, 
                      TeachingAssignment, 
                      Result,
+                     Timetable,
                         )
 
 
@@ -78,4 +80,65 @@ class ResultSerializer(serializers.ModelSerializer):
 
         return value
 
-    
+
+class TimetableSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Timetable
+        fields = [
+            "id",
+            "teaching_assignment",
+            "day_of_week",
+            "start_time",
+            "end_time",
+        ]
+        read_only_fields = ["id"]
+
+    def validate(self, data):
+        timetable = Timetable(
+            teaching_assignment=data.get(
+                "teaching_assignment",
+                getattr(
+                    self.instance,
+                    "teaching_assignment",
+                    None,
+                ),
+            ),
+            day_of_week=data.get(
+                "day_of_week",
+                getattr(
+                    self.instance,
+                    "day_of_week",
+                    None,
+                ),
+            ),
+            start_time=data.get(
+                "start_time",
+                getattr(
+                    self.instance,
+                    "start_time",
+                    None,
+                ),
+            ),
+            end_time=data.get(
+                "end_time",
+                getattr(
+                    self.instance,
+                    "end_time",
+                    None,
+                ),
+            ),
+        )
+
+        # Important for PATCH/PUT:
+        # exclude the current timetable from conflict checking.
+        if self.instance:
+            timetable.pk = self.instance.pk
+
+        try:
+            timetable.clean()
+        except DjangoValidationError as error:
+            raise serializers.ValidationError(
+                error.messages
+            )
+
+        return data

@@ -11,7 +11,8 @@ from .models import (AcademicYear,
         Subject, 
         ClassSection, 
         TeachingAssignment, 
-        Result)
+        Result,
+        Timetable)
 
 from .serializers import (
     AcademicYearSerializer,
@@ -20,6 +21,7 @@ from .serializers import (
     ClassSectionSerializer,
     TeachingAssignmentSerializer,
     ResultSerializer,
+    TimetableSerializer,
 )
 
 
@@ -563,6 +565,118 @@ def result_detail(request, result_id):
 
     if request.method == "DELETE":
         result.delete()
+
+        return Response(
+            status=status.HTTP_204_NO_CONTENT,
+        )
+
+
+# -------------------------
+# Timetable API
+# -------------------------
+
+@api_view(["GET", "POST"])
+@permission_classes([CanAccessAcademics])
+def timetable_list(request):
+    if request.method == "GET":
+        timetables = Timetable.objects.select_related(
+            "teaching_assignment",
+            "teaching_assignment__teacher",
+            "teaching_assignment__subject",
+            "teaching_assignment__class_section",
+            "teaching_assignment__class_section__grade_level",
+            "teaching_assignment__class_section__academic_year",
+        )
+
+        # Filter by day
+        day = request.query_params.get("day")
+        if day:
+            timetables = timetables.filter(
+                day_of_week=day
+            )
+
+        # Filter by teacher
+        teacher = request.query_params.get("teacher")
+        if teacher:
+            timetables = timetables.filter(
+                teaching_assignment__teacher_id=teacher
+            )
+
+        # Filter by subject
+        subject = request.query_params.get("subject")
+        if subject:
+            timetables = timetables.filter(
+                teaching_assignment__subject_id=subject
+            )
+
+        # Filter by class section
+        section = request.query_params.get("section")
+        if section:
+            timetables = timetables.filter(
+                teaching_assignment__class_section_id=section
+            )
+
+        serializer = TimetableSerializer(
+            timetables,
+            many=True,
+        )
+
+        return Response(serializer.data)
+
+    if request.method == "POST":
+        serializer = TimetableSerializer(
+            data=request.data
+        )
+
+        if serializer.is_valid():
+            serializer.save()
+
+            return Response(
+                serializer.data,
+                status=status.HTTP_201_CREATED,
+            )
+
+        return Response(
+            serializer.errors,
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+
+@api_view(["GET", "PUT", "PATCH", "DELETE"])
+@permission_classes([CanAccessAcademics])
+def timetable_detail(request, timetable_id):
+    try:
+        timetable = Timetable.objects.get(
+            id=timetable_id
+        )
+    except Timetable.DoesNotExist:
+        return Response(
+            {"error": "Timetable not found."},
+            status=status.HTTP_404_NOT_FOUND,
+        )
+
+    if request.method == "GET":
+        serializer = TimetableSerializer(timetable)
+        return Response(serializer.data)
+
+    if request.method in ["PUT", "PATCH"]:
+        serializer = TimetableSerializer(
+            timetable,
+            data=request.data,
+            partial=request.method == "PATCH",
+        )
+
+        if serializer.is_valid():
+            serializer.save()
+            return Response(serializer.data)
+
+        return Response(
+            serializer.errors,
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    if request.method == "DELETE":
+        timetable.delete()
 
         return Response(
             status=status.HTTP_204_NO_CONTENT,

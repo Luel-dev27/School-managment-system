@@ -1,4 +1,5 @@
 from django.db import models
+from django.core.exceptions import ValidationError
 
 # Create your models here.
 
@@ -130,4 +131,76 @@ class Result(models.Model):
             f"{self.enrollment.student} - "
             f"{self.subject} - "
             f"{self.term}: {self.score}"
+        )
+
+
+class Timetable(models.Model):
+    class DayOfWeek(models.TextChoices):
+        MONDAY = "monday", "Monday"
+        TUESDAY = "tuesday", "Tuesday"
+        WEDNESDAY = "wednesday", "Wednesday"
+        THURSDAY = "thursday", "Thursday"
+        FRIDAY = "friday", "Friday"
+
+    teaching_assignment = models.ForeignKey(
+        TeachingAssignment,
+        on_delete=models.PROTECT,
+        related_name="timetable_entries",
+    )
+
+    day_of_week = models.CharField(
+        max_length=10,
+        choices=DayOfWeek.choices,
+    )
+
+    start_time = models.TimeField()
+    end_time = models.TimeField()
+
+    def clean(self):
+        # 1. Validate start and end time
+        if self.start_time >= self.end_time:
+            raise ValidationError(
+                "End time must be later than start time."
+            )
+
+        # 2. Find timetable entries that overlap
+        overlapping = Timetable.objects.filter(
+            day_of_week=self.day_of_week,
+            start_time__lt=self.end_time,
+            end_time__gt=self.start_time,
+        ).exclude(pk=self.pk)
+
+        # 3. Prevent the same class section
+        # from having two lessons at the same time
+        class_conflict = overlapping.filter(
+            teaching_assignment__class_section=(
+                self.teaching_assignment.class_section
+            )
+        ).exists()
+
+        if class_conflict:
+            raise ValidationError(
+                "This class section already has a lesson "
+                "during this time."
+            )
+
+        # 4. Prevent the same teacher
+        # from teaching two classes at the same time
+        teacher_conflict = overlapping.filter(
+            teaching_assignment__teacher=(
+                self.teaching_assignment.teacher
+            )
+        ).exists()
+
+        if teacher_conflict:
+            raise ValidationError(
+                "This teacher already has another lesson "
+                "during this time."
+            )
+
+    def __str__(self):
+        return (
+            f"{self.teaching_assignment} - "
+            f"{self.day_of_week} "
+            f"{self.start_time}-{self.end_time}"
         )
