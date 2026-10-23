@@ -2,8 +2,7 @@ from django.db.models import Q
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.response import Response
 from rest_framework import status
-from rest_framework.permissions import IsAuthenticated
-from apps.accounts.permissions import IsTeacherOrAdmin
+from apps.accounts.permissions import CanAccessAttendance, IsTeacherOrAdmin, CanAccessStudents, CanAccessEnrollments
 
 
 from .models import Student, StudentEnrollment, Attendance
@@ -11,12 +10,25 @@ from .serializers import StudentSerializer, StudentEnrollmentSerializer, Attenda
 
     
 @api_view(["GET", "POST"])
-@permission_classes([IsAuthenticated])
+@permission_classes([CanAccessStudents])
 def student_list(request):
 
     # READ: Get all students    
     if request.method == "GET":
         students = Student.objects.all()
+        if request.user.groups.filter(name="Student").exists():
+            try:
+               student_profile = request.user.student_profile
+            except AttributeError:
+                return Response(
+                    {"error": "Student profile not found."},
+                    status=status.HTTP_403_FORBIDDEN,
+            )
+
+        students = students.filter(
+            id=student_profile.id
+        )
+
 
         # SEARCH: By first name, last name, or school student ID
         search = request.query_params.get("search")
@@ -66,7 +78,7 @@ def student_list(request):
 
 # READ one student, UPDATE a student, or DELETE a student
 @api_view(["GET", "PUT", "PATCH", "DELETE"])
-@permission_classes([IsAuthenticated])
+@permission_classes([CanAccessStudents])
 def student_detail(request, student_id):
 
     # Find the student by database ID
@@ -79,20 +91,39 @@ def student_detail(request, student_id):
             status=status.HTTP_404_NOT_FOUND,
         )
 
+    # SECURITY:
+    # A logged-in Student can only access their own profile.
+    if request.user.groups.filter(name="Student").exists():
+        try:
+            student_profile = request.user.student_profile
+
+        except AttributeError:
+            return Response(
+                {"error": "Student profile not found."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        # Block access if this is another student's profile
+        if student.id != student_profile.id:
+            return Response(
+                {"error": "You cannot access this student."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
     # READ: Get one student's information
     if request.method == "GET":
         serializer = StudentSerializer(student)
 
         return Response(serializer.data)
 
-    # UPDATE: Replace the student's submitted information
+    # UPDATE: Replace all submitted student information
     elif request.method == "PUT":
         serializer = StudentSerializer(
             student,
             data=request.data,
         )
 
-    # PARTIAL UPDATE: Change only the submitted fields
+    # PARTIAL UPDATE: Change only submitted fields
     elif request.method == "PATCH":
         serializer = StudentSerializer(
             student,
@@ -100,7 +131,7 @@ def student_detail(request, student_id):
             partial=True,
         )
 
-    # Save the updated information
+    # Save PUT or PATCH changes
     if request.method in ["PUT", "PATCH"]:
         if serializer.is_valid():
             serializer.save()
@@ -120,8 +151,8 @@ def student_detail(request, student_id):
             status=status.HTTP_204_NO_CONTENT,
         )
 
-
 @api_view(["GET", "POST"])
+@permission_classes([CanAccessEnrollments])
 def enrollment_list(request):
     if request.method == "GET":
         enrollments = StudentEnrollment.objects.select_related(
@@ -131,17 +162,40 @@ def enrollment_list(request):
             "class_section__academic_year",
         )
 
-        student_id = request.query_params.get("student")
-        if student_id:
-            enrollments = enrollments.filter(student_id=student_id)
+        # SECURITY:
+        # Students can only see their own enrollments.
+        if request.user.groups.filter(name="Student").exists():
+            try:
+                student_profile = request.user.student_profile
+            except AttributeError:
+                return Response(
+                    {"error": "Student profile not found."},
+                    status=status.HTTP_403_FORBIDDEN,
+                )
 
+            enrollments = enrollments.filter(
+                student=student_profile
+            )
+
+        # FILTER: By student database ID
+        student_id = request.query_params.get("student")
+
+        if student_id:
+            enrollments = enrollments.filter(
+                student_id=student_id
+            )
+
+        # FILTER: By class section
         section_id = request.query_params.get("section")
+
         if section_id:
             enrollments = enrollments.filter(
                 class_section_id=section_id
             )
 
+        # FILTER: By enrollment status
         enrollment_status = request.query_params.get("status")
+
         if enrollment_status:
             enrollments = enrollments.filter(
                 status=enrollment_status
@@ -151,13 +205,18 @@ def enrollment_list(request):
             enrollments,
             many=True,
         )
+
         return Response(serializer.data)
 
+    # CREATE
     elif request.method == "POST":
-        serializer = StudentEnrollmentSerializer(data=request.data)
+        serializer = StudentEnrollmentSerializer(
+            data=request.data
+        )
 
         if serializer.is_valid():
             serializer.save()
+
             return Response(
                 serializer.data,
                 status=status.HTTP_201_CREATED,
@@ -168,28 +227,57 @@ def enrollment_list(request):
             status=status.HTTP_400_BAD_REQUEST,
         )
 
+
 @api_view(["GET", "PUT", "PATCH", "DELETE"])
+@permission_classes([CanAccessEnrollments])
 def enrollment_detail(request, enrollment_id):
     try:
-        enrollment = StudentEnrollment.objects.get(
+        enrollment = StudentEnrollment.objects.select_related(
+            "student",
+            "class_section",
+        ).get(
             id=enrollment_id
         )
+
     except StudentEnrollment.DoesNotExist:
         return Response(
             {"error": "Enrollment not found"},
             status=status.HTTP_404_NOT_FOUND,
         )
 
+    # SECURITY:
+    # A Student can only access their own enrollment.
+    if request.user.groups.filter(name="Student").exists():
+        try:
+            student_profile = request.user.student_profile
+        except AttributeError:
+            return Response(
+                {"error": "Student profile not found."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        if enrollment.student != student_profile:
+            return Response(
+                {"error": "You cannot access this enrollment."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+    # READ
     if request.method == "GET":
-        serializer = StudentEnrollmentSerializer(enrollment)
+        serializer = StudentEnrollmentSerializer(
+            enrollment
+        )
+
         return Response(serializer.data)
 
+    # FULL UPDATE
     elif request.method == "PUT":
         serializer = StudentEnrollmentSerializer(
             enrollment,
             data=request.data,
         )
 
+    # PARTIAL UPDATE
     elif request.method == "PATCH":
         serializer = StudentEnrollmentSerializer(
             enrollment,
@@ -197,9 +285,11 @@ def enrollment_detail(request, enrollment_id):
             partial=True,
         )
 
+    # SAVE PUT/PATCH
     if request.method in ["PUT", "PATCH"]:
         if serializer.is_valid():
             serializer.save()
+
             return Response(serializer.data)
 
         return Response(
@@ -207,24 +297,46 @@ def enrollment_detail(request, enrollment_id):
             status=status.HTTP_400_BAD_REQUEST,
         )
 
+    # DELETE
     elif request.method == "DELETE":
         enrollment.delete()
-        return Response(status=status.HTTP_204_NO_CONTENT)
+
+        return Response(
+            status=status.HTTP_204_NO_CONTENT,
+        )
 
 
 @api_view(["GET", "POST"])
-@permission_classes([IsTeacherOrAdmin])
+@permission_classes([CanAccessAttendance])
 def attendance_list(request):
     if request.method == "GET":
         attendance_records = Attendance.objects.all()
 
+        # SECURITY:
+        # Students can only see their own attendance records.
+        if request.user.groups.filter(name="Student").exists():
+            try:
+                student_profile = request.user.student_profile
+            except AttributeError:
+                return Response(
+                    {"error": "Student profile not found."},
+                    status=status.HTTP_403_FORBIDDEN,
+                )
+
+            attendance_records = attendance_records.filter(
+                enrollment__student=student_profile
+            )
+
+        # FILTERS
         date = request.query_params.get("date")
         status_value = request.query_params.get("status")
         student = request.query_params.get("student")
         section = request.query_params.get("section")
 
         if date:
-            attendance_records = attendance_records.filter(date=date)
+            attendance_records = attendance_records.filter(
+                date=date
+            )
 
         if status_value:
             attendance_records = attendance_records.filter(
@@ -245,13 +357,18 @@ def attendance_list(request):
             attendance_records,
             many=True,
         )
+
         return Response(serializer.data)
 
+    # CREATE ATTENDANCE
     if request.method == "POST":
-        serializer = AttendanceSerializer(data=request.data)
+        serializer = AttendanceSerializer(
+            data=request.data
+        )
 
         if serializer.is_valid():
             serializer.save()
+
             return Response(
                 serializer.data,
                 status=status.HTTP_201_CREATED,
@@ -262,21 +379,51 @@ def attendance_list(request):
             status=status.HTTP_400_BAD_REQUEST,
         )
 
+
 @api_view(["GET", "PUT", "PATCH", "DELETE"])
-@permission_classes([IsTeacherOrAdmin])
+@permission_classes([CanAccessAttendance])
 def attendance_detail(request, attendance_id):
     try:
-        attendance = Attendance.objects.get(id=attendance_id)
+        attendance = Attendance.objects.select_related(
+            "enrollment",
+            "enrollment__student",
+        ).get(
+            id=attendance_id
+        )
+
     except Attendance.DoesNotExist:
         return Response(
             {"error": "Attendance record not found"},
             status=status.HTTP_404_NOT_FOUND,
         )
 
+    # SECURITY:
+    # A Student can only access their own attendance record.
+    if request.user.groups.filter(name="Student").exists():
+        try:
+            student_profile = request.user.student_profile
+        except AttributeError:
+            return Response(
+                {"error": "Student profile not found."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        if attendance.enrollment.student != student_profile:
+            return Response(
+                {
+                    "error":
+                    "You cannot access this attendance record."
+                },
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+    # READ
     if request.method == "GET":
         serializer = AttendanceSerializer(attendance)
+
         return Response(serializer.data)
 
+    # UPDATE
     if request.method in ["PUT", "PATCH"]:
         serializer = AttendanceSerializer(
             attendance,
@@ -286,6 +433,7 @@ def attendance_detail(request, attendance_id):
 
         if serializer.is_valid():
             serializer.save()
+
             return Response(serializer.data)
 
         return Response(
@@ -293,6 +441,10 @@ def attendance_detail(request, attendance_id):
             status=status.HTTP_400_BAD_REQUEST,
         )
 
+    # DELETE
     if request.method == "DELETE":
         attendance.delete()
-        return Response(status=status.HTTP_204_NO_CONTENT)
+
+        return Response(
+            status=status.HTTP_204_NO_CONTENT,
+        )

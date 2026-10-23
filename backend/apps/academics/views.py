@@ -2,7 +2,7 @@ from django.shortcuts import render
 
 # Create your views here.
 from rest_framework.decorators import api_view, permission_classes
-from apps.accounts.permissions import CanAccessResults, IsTeacherOrAdmin
+from apps.accounts.permissions import CanAccessResults, CanAccessAcademics, CanAccessStudents
 from rest_framework.response import Response
 from rest_framework import status
 
@@ -28,6 +28,7 @@ from .serializers import (
 # -------------------------
 
 @api_view(["GET", "POST"])
+@permission_classes([CanAccessAcademics])
 def grade_list(request):
     if request.method == "GET":
         grades = GradeLevel.objects.all().order_by("number")
@@ -50,6 +51,7 @@ def grade_list(request):
 
 
 @api_view(["GET", "PUT", "PATCH", "DELETE"])
+@permission_classes([CanAccessAcademics])
 def grade_detail(request, grade_id):
     try:
         grade = GradeLevel.objects.get(id=grade_id)
@@ -108,6 +110,7 @@ def grade_detail(request, grade_id):
 # -------------------------
 
 @api_view(["GET", "POST"])
+@permission_classes([CanAccessAcademics])
 def subject_list(request):
     if request.method == "GET":
         subjects = Subject.objects.all().order_by("name")
@@ -130,6 +133,7 @@ def subject_list(request):
 
 
 @api_view(["GET", "PUT", "PATCH", "DELETE"])
+@permission_classes([CanAccessAcademics])
 def subject_detail(request, subject_id):
     try:
         subject = Subject.objects.get(id=subject_id)
@@ -188,6 +192,7 @@ def subject_detail(request, subject_id):
 # -------------------------
 
 @api_view(["GET", "POST"])
+@permission_classes([CanAccessAcademics])
 def academic_year_list(request):
     if request.method == "GET":
         years = AcademicYear.objects.all().order_by("-start_date")
@@ -210,6 +215,7 @@ def academic_year_list(request):
 
 
 @api_view(["GET", "PUT", "PATCH", "DELETE"])
+@permission_classes([CanAccessAcademics])
 def academic_year_detail(request, year_id):
     try:
         year = AcademicYear.objects.get(id=year_id)
@@ -264,6 +270,7 @@ def academic_year_detail(request, year_id):
 
 
 @api_view(["GET", "POST"])
+@permission_classes([CanAccessAcademics])
 def section_list(request):
     if request.method == "GET":
         sections = ClassSection.objects.select_related(
@@ -290,6 +297,7 @@ def section_list(request):
         )
 
 @api_view(["GET", "PUT", "PATCH", "DELETE"])
+@permission_classes([CanAccessAcademics])
 def section_detail(request, section_id):
     try:
         section = ClassSection.objects.get(id=section_id)
@@ -342,6 +350,7 @@ def section_detail(request, section_id):
             )
 
 @api_view(["GET", "POST"])
+@permission_classes([CanAccessAcademics])
 def teaching_assignment_list(request):
     if request.method == "GET":
         assignments = TeachingAssignment.objects.select_related(
@@ -389,6 +398,7 @@ def teaching_assignment_list(request):
 
 
 @api_view(["GET", "PUT", "PATCH", "DELETE"])
+@permission_classes([CanAccessAcademics])
 def teaching_assignment_detail(request, assignment_id):
     try:
         assignment = TeachingAssignment.objects.get(
