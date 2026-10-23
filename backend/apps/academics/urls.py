@@ -15,6 +15,7 @@ from .views import (
     result_detail,
     timetable_list,
     timetable_detail,
+    report_card
 )
 
 
@@ -101,5 +102,12 @@ urlpatterns = [
         "timetables/<int:timetable_id>/",
         timetable_detail,
         name="timetable-detail",
+    ),
+
+     # Report cards
+    path(
+        "report-cards/<int:student_id>/",
+        report_card,
+        name="report-card",
     ),
 ]

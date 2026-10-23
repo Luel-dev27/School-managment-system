@@ -1,6 +1,7 @@
 from django.shortcuts import render
 
 # Create your views here.
+from apps.students.models import Student, StudentEnrollment
 from rest_framework.decorators import api_view, permission_classes
 from apps.accounts.permissions import CanAccessResults, CanAccessAcademics, CanAccessStudents
 from rest_framework.response import Response
@@ -681,3 +682,149 @@ def timetable_detail(request, timetable_id):
         return Response(
             status=status.HTTP_204_NO_CONTENT,
         )
+
+
+# -------------------------
+# Report Card API
+# -------------------------
+
+@api_view(["GET"])
+@permission_classes([CanAccessResults])
+def report_card(request, student_id):
+    try:
+        student = Student.objects.get(id=student_id)
+    except Student.DoesNotExist:
+        return Response(
+            {"error": "Student not found."},
+            status=status.HTTP_404_NOT_FOUND,
+        )
+
+    # Students can only view their own report card.
+    if request.user.groups.filter(name="Student").exists():
+        try:
+            student_profile = request.user.student_profile
+        except AttributeError:
+            return Response(
+                {"error": "Student profile not found."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        if student.id != student_profile.id:
+            return Response(
+                {
+                    "error": (
+                        "You cannot access another student's "
+                        "report card."
+                    )
+                },
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+    # Find the student's latest enrollment.
+    enrollment = (
+        StudentEnrollment.objects
+        .select_related(
+            "class_section",
+            "class_section__grade_level",
+            "class_section__academic_year",
+        )
+        .filter(student=student)
+        .order_by("-enrollment_date", "-id")
+        .first()
+    )
+
+    if enrollment is None:
+        return Response(
+            {"error": "Enrollment not found."},
+            status=status.HTTP_404_NOT_FOUND,
+        )
+
+    # Get results for this enrollment.
+    results = (
+        Result.objects
+        .filter(enrollment=enrollment)
+        .select_related("subject")
+        .order_by("subject__name", "term")
+    )
+
+    subjects = {}
+
+    # Organize results by subject.
+    for result in results:
+        subject_id = result.subject.id
+
+        if subject_id not in subjects:
+            subjects[subject_id] = {
+                "subject_id": subject_id,
+                "subject_name": result.subject.name,
+                "term_1": None,
+                "term_2": None,
+                "average": None,
+            }
+
+        subjects[subject_id][result.term] = float(
+            result.score
+        )
+
+    # Calculate each subject average.
+    for subject_data in subjects.values():
+        scores = []
+
+        if subject_data["term_1"] is not None:
+            scores.append(subject_data["term_1"])
+
+        if subject_data["term_2"] is not None:
+            scores.append(subject_data["term_2"])
+
+        if scores:
+            subject_data["average"] = round(
+                sum(scores) / len(scores),
+                2,
+            )
+
+    # Calculate overall average.
+    subject_averages = [
+        subject["average"]
+        for subject in subjects.values()
+        if subject["average"] is not None
+    ]
+
+    overall_average = None
+
+    if subject_averages:
+        overall_average = round(
+            sum(subject_averages)
+            / len(subject_averages),
+            2,
+        )
+
+    # Return the complete report card.
+    return Response({
+        "student": {
+            "id": student.id,
+            "student_id": student.student_id,
+            "name": (
+                f"{student.first_name} "
+                f"{student.last_name}"
+            ),
+        },
+
+        "enrollment": {
+            "id": enrollment.id,
+            "status": enrollment.status,
+        },
+
+        "academic_year": (
+            enrollment.class_section.academic_year.name
+        ),
+
+        "grade": (
+            enrollment.class_section.grade_level.number
+        ),
+
+        "section": enrollment.class_section.name,
+
+        "subjects": list(subjects.values()),
+
+        "overall_average": overall_average,
+    })
