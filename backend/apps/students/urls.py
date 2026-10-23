@@ -6,6 +6,7 @@ from .views import (
     enrollment_detail,
     attendance_list,
     attendance_detail,
+    promote_student,
 )
 
 urlpatterns = [
@@ -15,4 +16,9 @@ urlpatterns = [
     path("enrollments/<int:enrollment_id>/", enrollment_detail, name="enrollment-detail"),
     path("attendance/", attendance_list, name="attendance-list"),
     path("attendance/<int:attendance_id>/", attendance_detail, name="attendance-detail"),
+   path(
+    "<int:student_id>/promote/",
+    promote_student,
+    name="promote-student",
+    ),
 ]

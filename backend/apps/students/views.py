@@ -2,9 +2,9 @@ from django.db.models import Q
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.response import Response
 from rest_framework import status
-from apps.accounts.permissions import CanAccessAttendance, IsTeacherOrAdmin, CanAccessStudents, CanAccessEnrollments
+from apps.accounts.permissions import CanAccessAttendance, CanAccessStudents, CanAccessEnrollments
 
-
+from apps.academics.models import ClassSection
 from .models import Student, StudentEnrollment, Attendance
 from .serializers import StudentSerializer, StudentEnrollmentSerializer, AttendanceSerializer
 
@@ -448,3 +448,159 @@ def attendance_detail(request, attendance_id):
         return Response(
             status=status.HTTP_204_NO_CONTENT,
         )
+
+
+@api_view(["POST"])
+@permission_classes([CanAccessStudents])
+def promote_student(request, student_id):
+    # Only Admin users can promote students.
+    if not (
+        request.user.is_superuser
+        or request.user.groups.filter(name="Admin").exists()
+    ):
+        return Response(
+            {"error": "Only admins can promote students."},
+            status=status.HTTP_403_FORBIDDEN,
+        )
+
+    # Find the student.
+    try:
+        student = Student.objects.get(id=student_id)
+    except Student.DoesNotExist:
+        return Response(
+            {"error": "Student not found."},
+            status=status.HTTP_404_NOT_FOUND,
+        )
+
+    # Get destination class section.
+    class_section_id = request.data.get("class_section")
+
+    if not class_section_id:
+        return Response(
+            {"error": "class_section is required."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    try:
+        new_section = ClassSection.objects.select_related(
+            "grade_level",
+            "academic_year",
+        ).get(id=class_section_id)
+    except ClassSection.DoesNotExist:
+        return Response(
+            {"error": "Class section not found."},
+            status=status.HTTP_404_NOT_FOUND,
+        )
+
+    # Find the student's latest enrollment.
+    current_enrollment = (
+        StudentEnrollment.objects
+        .select_related(
+            "class_section",
+            "class_section__grade_level",
+            "class_section__academic_year",
+        )
+        .filter(student=student)
+        .order_by("-enrollment_date", "-id")
+        .first()
+    )
+
+    if current_enrollment is None:
+        return Response(
+            {"error": "Student has no enrollment."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    old_grade = current_enrollment.class_section.grade_level.number
+    new_grade = new_section.grade_level.number
+
+    # The destination must be exactly one grade higher.
+    if new_grade != old_grade + 1:
+        return Response(
+            {
+                "error": (
+                    f"Student can only be promoted from "
+                    f"Grade {old_grade} to Grade {old_grade + 1}."
+                )
+            },
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    # Destination must belong to a different academic year.
+    if (
+        new_section.academic_year_id
+        == current_enrollment.class_section.academic_year_id
+    ):
+        return Response(
+            {
+                "error": (
+                    "Promotion must be to a different "
+                    "academic year."
+                )
+            },
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    # Prevent duplicate enrollment in the destination section.
+    if StudentEnrollment.objects.filter(
+        student=student,
+        class_section=new_section,
+    ).exists():
+        return Response(
+            {
+                "error": (
+                    "Student is already enrolled in "
+                    "this class section."
+                )
+            },
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    # Preserve the old enrollment but mark it completed.
+    current_enrollment.status = (
+        StudentEnrollment.Status.COMPLETED
+    )
+    current_enrollment.save()
+
+    # Create the new active enrollment.
+    new_enrollment = StudentEnrollment.objects.create(
+        student=student,
+        class_section=new_section,
+        status=StudentEnrollment.Status.ACTIVE,
+    )
+
+    return Response(
+        {
+            "message": "Student promoted successfully.",
+            "student": {
+                "id": student.id,
+                "student_id": student.student_id,
+                "name": (
+                    f"{student.first_name} "
+                    f"{student.last_name}"
+                ),
+            },
+            "previous_enrollment": {
+                "id": current_enrollment.id,
+                "grade": old_grade,
+                "section": (
+                    current_enrollment.class_section.name
+                ),
+                "academic_year": (
+                    current_enrollment
+                    .class_section
+                    .academic_year
+                    .name
+                ),
+                "status": current_enrollment.status,
+            },
+            "new_enrollment": {
+                "id": new_enrollment.id,
+                "grade": new_grade,
+                "section": new_section.name,
+                "academic_year": new_section.academic_year.name,
+                "status": new_enrollment.status,
+            },
+        },
+        status=status.HTTP_201_CREATED,
+    )

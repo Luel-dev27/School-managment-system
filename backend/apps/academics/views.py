@@ -685,12 +685,14 @@ def timetable_detail(request, timetable_id):
 
 
 # -------------------------
+## -------------------------
 # Report Card API
 # -------------------------
 
 @api_view(["GET"])
 @permission_classes([CanAccessResults])
 def report_card(request, student_id):
+    # Find the student.
     try:
         student = Student.objects.get(id=student_id)
     except Student.DoesNotExist:
@@ -720,8 +722,14 @@ def report_card(request, student_id):
                 status=status.HTTP_403_FORBIDDEN,
             )
 
-    # Find the student's latest enrollment.
-    enrollment = (
+    # Get enrollment ID from query parameter if provided.
+    #
+    # Example:
+    # /api/academics/report-cards/1/?enrollment=1
+    enrollment_id = request.query_params.get("enrollment")
+
+    # Get all enrollments belonging to this student.
+    enrollments = (
         StudentEnrollment.objects
         .select_related(
             "class_section",
@@ -729,17 +737,38 @@ def report_card(request, student_id):
             "class_section__academic_year",
         )
         .filter(student=student)
-        .order_by("-enrollment_date", "-id")
-        .first()
     )
 
-    if enrollment is None:
-        return Response(
-            {"error": "Enrollment not found."},
-            status=status.HTTP_404_NOT_FOUND,
+    # If an enrollment ID was provided,
+    # use that specific enrollment.
+    if enrollment_id:
+        try:
+            enrollment = enrollments.get(id=enrollment_id)
+        except StudentEnrollment.DoesNotExist:
+            return Response(
+                {
+                    "error": (
+                        "Enrollment not found for this student."
+                    )
+                },
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+    # Otherwise use the student's latest enrollment.
+    else:
+        enrollment = (
+            enrollments
+            .order_by("-enrollment_date", "-id")
+            .first()
         )
 
-    # Get results for this enrollment.
+        if enrollment is None:
+            return Response(
+                {"error": "Enrollment not found."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+    # Get results belonging to the selected enrollment.
     results = (
         Result.objects
         .filter(enrollment=enrollment)
@@ -766,7 +795,7 @@ def report_card(request, student_id):
             result.score
         )
 
-    # Calculate each subject average.
+    # Calculate the average for each subject.
     for subject_data in subjects.values():
         scores = []
 
