@@ -80,6 +80,37 @@ class ResultSerializer(serializers.ModelSerializer):
 
         return value
 
+    def validate(self, data):
+        enrollment = data.get(
+            "enrollment",
+            getattr(self.instance, "enrollment", None),
+        )
+
+        subject = data.get(
+           "subject",
+           getattr(self.instance, "subject", None),
+        )
+
+        if enrollment and subject:
+            subject_is_assigned = (
+                TeachingAssignment.objects.filter(
+                    class_section=enrollment.class_section,
+                    subject=subject,
+                ).exists()
+           )
+
+            if not subject_is_assigned:
+                raise serializers.ValidationError(
+                    {
+                        "subject": (
+                            "This subject is not assigned "
+                            "to the student's class section."
+                       )
+                  }
+               )
+
+        return data
+
 
 class TimetableSerializer(serializers.ModelSerializer):
     class Meta:
