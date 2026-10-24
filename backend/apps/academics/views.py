@@ -224,6 +224,7 @@ def academic_year_list(request):
 def academic_year_detail(request, year_id):
     try:
         year = AcademicYear.objects.get(id=year_id)
+
     except AcademicYear.DoesNotExist:
         return Response(
             {"error": "Academic year not found"},
@@ -258,8 +259,35 @@ def academic_year_detail(request, year_id):
         )
 
     if request.method == "DELETE":
+        # Closed academic years are historical records
+        # and must never be deleted.
+        if year.is_closed:
+            return Response(
+                {
+                    "error": (
+                        "A closed academic year cannot "
+                        "be deleted."
+                    )
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        # A current academic year should also not
+        # be deleted directly.
+        if year.is_current:
+            return Response(
+                {
+                    "error": (
+                        "The current academic year cannot "
+                        "be deleted."
+                    )
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
         try:
             year.delete()
+
         except Exception:
             return Response(
                 {
@@ -272,7 +300,7 @@ def academic_year_detail(request, year_id):
             )
 
         return Response(
-            status=status.HTTP_204_NO_CONTENT
+            status=status.HTTP_204_NO_CONTENT,
         )
 
 
