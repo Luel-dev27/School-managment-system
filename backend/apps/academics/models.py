@@ -15,6 +15,8 @@ class AcademicYear(models.Model):
 
 class GradeLevel(models.Model):
     number = models.PositiveSmallIntegerField(unique=True)
+    
+    is_final_grade = models.BooleanField(default=False)
 
     def __str__(self):
         return f"Grade {self.number}"

@@ -1,5 +1,6 @@
 from django.urls import path
 from .views import (
+    graduate_student,
     student_list, 
     student_detail,
     enrollment_list,
@@ -20,5 +21,10 @@ urlpatterns = [
     "<int:student_id>/promote/",
     promote_student,
     name="promote-student",
+    ),
+    path(
+    "<int:student_id>/graduate/",
+    graduate_student,
+    name="graduate-student",
     ),
 ]

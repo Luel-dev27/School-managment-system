@@ -13,7 +13,11 @@ from .models import (AcademicYear,
 class GradeLevelSerializer(serializers.ModelSerializer):
     class Meta:
         model = GradeLevel
-        fields = ["id", "number"]
+        fields = [
+            "id",
+            "number",
+            "is_final_grade",
+        ]
         read_only_fields = ["id"]
 
 

@@ -1,9 +1,16 @@
-from django.db import models
-from apps.academics.models import GradeLevel, ClassSection
 from django.conf import settings
+from django.db import models
+
+from apps.academics.models import GradeLevel, ClassSection
 
 
 class Student(models.Model):
+    class Status(models.TextChoices):
+        ACTIVE = "active", "Active"
+        GRADUATED = "graduated", "Graduated"
+        TRANSFERRED = "transferred", "Transferred"
+        INACTIVE = "inactive", "Inactive"
+
     user = models.OneToOneField(
         settings.AUTH_USER_MODEL,
         on_delete=models.SET_NULL,
@@ -11,11 +18,20 @@ class Student(models.Model):
         blank=True,
         related_name="student_profile",
     )
+
     first_name = models.CharField(max_length=100)
     last_name = models.CharField(max_length=100)
-    student_id = models.CharField(max_length=20, unique=True)
+
+    student_id = models.CharField(
+        max_length=20,
+        unique=True,
+    )
+
     date_of_birth = models.DateField()
-    enrollment_date = models.DateField(auto_now_add=True)
+
+    enrollment_date = models.DateField(
+        auto_now_add=True,
+    )
 
     grade_level = models.ForeignKey(
         GradeLevel,
@@ -25,8 +41,15 @@ class Student(models.Model):
         blank=True,
     )
 
+    status = models.CharField(
+        max_length=20,
+        choices=Status.choices,
+        default=Status.ACTIVE,
+    )
+
     def __str__(self):
         return f"{self.first_name} {self.last_name}"
+
 
 class StudentEnrollment(models.Model):
     class Status(models.TextChoices):
@@ -46,7 +69,9 @@ class StudentEnrollment(models.Model):
         related_name="student_enrollments",
     )
 
-    enrollment_date = models.DateField(auto_now_add=True)
+    enrollment_date = models.DateField(
+        auto_now_add=True,
+    )
 
     status = models.CharField(
         max_length=20,
@@ -59,18 +84,18 @@ class StudentEnrollment(models.Model):
             models.UniqueConstraint(
                 fields=["student", "class_section"],
                 name="unique_student_class_enrollment",
-           ),
-
+            ),
             models.UniqueConstraint(
                 fields=["student"],
                 condition=models.Q(status="active"),
                 name="unique_active_enrollment_per_student",
-          ),
-     ]
+            ),
+        ]
 
     def __str__(self):
         return (
-            f"{self.student} - {self.class_section}"
+            f"{self.student} - "
+            f"{self.class_section}"
         )
 
 
@@ -102,4 +127,8 @@ class Attendance(models.Model):
         ordering = ["-date"]
 
     def __str__(self):
-        return f"{self.enrollment.student} - {self.date} - {self.status}"
+        return (
+            f"{self.enrollment.student} - "
+            f"{self.date} - "
+            f"{self.status}"
+        )

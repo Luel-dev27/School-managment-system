@@ -14,24 +14,25 @@ from .serializers import StudentSerializer, StudentEnrollmentSerializer, Attenda
 @permission_classes([CanAccessStudents])
 def student_list(request):
 
-    # READ: Get all students    
+    # READ: Get students
     if request.method == "GET":
         students = Student.objects.all()
+
+        # Student users can only see their own profile.
         if request.user.groups.filter(name="Student").exists():
             try:
-               student_profile = request.user.student_profile
+                student_profile = request.user.student_profile
             except AttributeError:
                 return Response(
                     {"error": "Student profile not found."},
                     status=status.HTTP_403_FORBIDDEN,
+                )
+
+            students = students.filter(
+                id=student_profile.id
             )
 
-        students = students.filter(
-            id=student_profile.id
-        )
-
-
-        # SEARCH: By first name, last name, or school student ID
+        # SEARCH: By first name, last name, or student ID
         search = request.query_params.get("search")
 
         if search:
@@ -41,13 +42,15 @@ def student_list(request):
                 | Q(student_id__icontains=search)
             )
 
-        # FILTER: By the school's student ID
+        # FILTER: By school student ID
         student_id = request.query_params.get("student_id")
 
         if student_id:
-            students = students.filter(student_id=student_id)
+            students = students.filter(
+                student_id=student_id
+            )
 
-        # FILTER: By grade number, such as Grade 9 or Grade 10
+        # FILTER: By grade number
         grade = request.query_params.get("grade")
 
         if grade:
@@ -55,13 +58,18 @@ def student_list(request):
                 grade_level__number=grade
             )
 
-        serializer = StudentSerializer(students, many=True)
+        serializer = StudentSerializer(
+            students,
+            many=True,
+        )
 
         return Response(serializer.data)
 
     # CREATE: Register a new student
     elif request.method == "POST":
-        serializer = StudentSerializer(data=request.data)
+        serializer = StudentSerializer(
+            data=request.data
+        )
 
         if serializer.is_valid():
             serializer.save()
@@ -75,7 +83,6 @@ def student_list(request):
             serializer.errors,
             status=status.HTTP_400_BAD_REQUEST,
         )
-
 
 # READ one student, UPDATE a student, or DELETE a student
 @api_view(["GET", "PUT", "PATCH", "DELETE"])
@@ -450,7 +457,6 @@ def attendance_detail(request, attendance_id):
             status=status.HTTP_204_NO_CONTENT,
         )
 
-
 @api_view(["POST"])
 @permission_classes([CanAccessStudents])
 def promote_student(request, student_id):
@@ -512,6 +518,19 @@ def promote_student(request, student_id):
             status=status.HTTP_400_BAD_REQUEST,
         )
 
+    # Students in a final grade must graduate,
+    # not be promoted to another grade.
+    if current_enrollment.class_section.grade_level.is_final_grade:
+        return Response(
+            {
+                "error": (
+                    "Students in the final grade should "
+                    "be graduated, not promoted."
+                )
+            },
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
     old_grade = current_enrollment.class_section.grade_level.number
     new_grade = new_section.grade_level.number
 
@@ -527,23 +546,23 @@ def promote_student(request, student_id):
             status=status.HTTP_400_BAD_REQUEST,
         )
 
-    # Destination must belong to a different academic year.
+    # Destination must belong to a later academic year.
     current_year = (
-       current_enrollment.class_section.academic_year
-   )
+        current_enrollment.class_section.academic_year
+    )
 
     new_year = new_section.academic_year
 
     if new_year.start_date <= current_year.start_date:
         return Response(
-           {
+            {
                 "error": (
                     "Promotion must be to a later "
                     "academic year."
-               )
+                )
             },
             status=status.HTTP_400_BAD_REQUEST,
-      )
+        )
 
     # Prevent duplicate enrollment in the destination section.
     if StudentEnrollment.objects.filter(
@@ -572,7 +591,11 @@ def promote_student(request, student_id):
             student=student,
             class_section=new_section,
             status=StudentEnrollment.Status.ACTIVE,
-      )
+        )
+
+        # Keep the student's current grade synchronized.
+        student.grade_level = new_section.grade_level
+        student.save(update_fields=["grade_level"])
 
     return Response(
         {
@@ -609,3 +632,97 @@ def promote_student(request, student_id):
         },
         status=status.HTTP_201_CREATED,
     )
+
+@api_view(["POST"])
+@permission_classes([CanAccessStudents])
+def graduate_student(request, student_id):
+    # Only Admin users can graduate students.
+    if not (
+        request.user.is_superuser
+        or request.user.groups.filter(name="Admin").exists()
+    ):
+        return Response(
+            {"error": "Only admins can graduate students."},
+            status=status.HTTP_403_FORBIDDEN,
+        )
+
+    try:
+        student = Student.objects.get(id=student_id)
+    except Student.DoesNotExist:
+        return Response(
+            {"error": "Student not found."},
+            status=status.HTTP_404_NOT_FOUND,
+        )
+
+    if student.status == Student.Status.GRADUATED:
+        return Response(
+            {"error": "Student is already graduated."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    current_enrollment = (
+        StudentEnrollment.objects
+        .select_related(
+            "class_section",
+            "class_section__grade_level",
+            "class_section__academic_year",
+        )
+        .filter(
+            student=student,
+            status=StudentEnrollment.Status.ACTIVE,
+        )
+        .first()
+    )
+
+    if current_enrollment is None:
+        return Response(
+            {"error": "Student has no active enrollment."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    grade_level = current_enrollment.class_section.grade_level
+
+    if not grade_level.is_final_grade:
+        return Response(
+            {
+                "error": (
+                    "Student can only graduate from "
+                    "a final grade."
+                )
+            },
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    with transaction.atomic():
+        current_enrollment.status = (
+            StudentEnrollment.Status.COMPLETED
+        )
+        current_enrollment.save()
+
+        student.status = Student.Status.GRADUATED
+        student.save()
+
+    return Response({
+        "message": "Student graduated successfully.",
+        "student": {
+            "id": student.id,
+            "student_id": student.student_id,
+            "name": (
+                f"{student.first_name} "
+                f"{student.last_name}"
+            ),
+            "status": student.status,
+        },
+        "final_enrollment": {
+            "id": current_enrollment.id,
+            "grade": grade_level.number,
+            "section": current_enrollment.class_section.name,
+            "academic_year": (
+                current_enrollment
+                .class_section
+                .academic_year
+                .name
+            ),
+            "status": current_enrollment.status,
+        },
+    })
