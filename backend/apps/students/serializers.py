@@ -35,14 +35,56 @@ class StudentEnrollmentSerializer(serializers.ModelSerializer):
         ]
 
     def validate(self, data):
+        # Completed and transferred enrollments are
+        # historical records and cannot be modified.
+        if self.instance and self.instance.status in [
+            StudentEnrollment.Status.COMPLETED,
+            StudentEnrollment.Status.TRANSFERRED,
+        ]:
+            protected_fields = [
+                "student",
+                "class_section",
+            ]
+
+            changed_fields = []
+
+            for field in protected_fields:
+                if field in data:
+                    old_value = getattr(
+                        self.instance,
+                        field,
+                    )
+                    new_value = data[field]
+
+                    if new_value != old_value:
+                        changed_fields.append(field)
+
+            if changed_fields:
+                raise serializers.ValidationError(
+                    {
+                        "error": (
+                            "Completed or transferred "
+                            "enrollments cannot be modified."
+                        )
+                    }
+                )
+
         student = data.get(
             "student",
-            getattr(self.instance, "student", None),
+            getattr(
+                self.instance,
+                "student",
+                None,
+            ),
         )
 
         class_section = data.get(
             "class_section",
-            getattr(self.instance, "class_section", None),
+            getattr(
+                self.instance,
+                "class_section",
+                None,
+            ),
         )
 
         # Only active students can have an active enrollment.
