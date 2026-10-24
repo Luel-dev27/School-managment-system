@@ -39,7 +39,11 @@ class AcademicYearSerializer(serializers.ModelSerializer):
             "is_current",
             "is_closed",
         ]
-        read_only_fields = ["id"]
+        read_only_fields = [
+            "id",
+            "is_current",
+            "is_closed",
+       ]
 
     def validate(self, data):
         start_date = data.get(
