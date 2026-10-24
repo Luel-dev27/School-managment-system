@@ -1052,6 +1052,28 @@ def transfer_student(request, student_id):
         .first()
     )
 
+    # Do not modify an enrollment that belongs
+    # to a closed academic year.
+    if active_enrollment:
+        academic_year = (
+            active_enrollment
+            .class_section
+            .academic_year
+        )
+
+        if academic_year.is_closed:
+            return Response(
+                {
+                    "error": (
+                        "Student cannot be transferred because "
+                        "the active enrollment belongs to a "
+                        "closed academic year."
+                    )
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+    # Update everything together.
     with transaction.atomic():
         # If the student leaves during an active grade,
         # mark that enrollment as transferred.
@@ -1059,14 +1081,15 @@ def transfer_student(request, student_id):
             active_enrollment.status = (
                 StudentEnrollment.Status.TRANSFERRED
             )
+
             active_enrollment.save(
                 update_fields=["status"]
             )
 
-        # If previous enrollment is already completed,
-        # we leave it unchanged.
+        # Previous completed enrollments remain unchanged.
 
         student.status = Student.Status.TRANSFERRED
+
         student.save(
             update_fields=["status"]
         )
