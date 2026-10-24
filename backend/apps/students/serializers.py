@@ -28,7 +28,32 @@ class StudentEnrollmentSerializer(serializers.ModelSerializer):
             "enrollment_date",
             "status",
         ]
-        read_only_fields = ["id", "enrollment_date", "status"]
+        read_only_fields = [
+            "id",
+            "enrollment_date",
+            "status",
+        ]
+
+    def validate(self, data):
+        class_section = data.get(
+            "class_section",
+            getattr(self.instance, "class_section", None),
+        )
+
+        if class_section:
+            academic_year = class_section.academic_year
+
+            if academic_year.is_closed:
+                raise serializers.ValidationError(
+                    {
+                        "class_section": (
+                            "Students cannot be enrolled "
+                            "in a closed academic year."
+                        )
+                    }
+                )
+
+        return data
 
 
 class AttendanceSerializer(serializers.ModelSerializer):
