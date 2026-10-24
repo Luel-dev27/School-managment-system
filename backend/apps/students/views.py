@@ -588,6 +588,20 @@ def promote_student(request, student_id):
 
     new_year = new_section.academic_year
 
+    
+
+    # Do not promote a student into a closed academic year.
+    if new_year.is_closed:
+        return Response(
+           {
+                "error": (
+                    "Students cannot be promoted into "
+                    "a closed academic year."
+                )
+           },
+            status=status.HTTP_400_BAD_REQUEST,
+       )
+
     if new_year.start_date <= current_year.start_date:
         return Response(
             {
@@ -691,17 +705,14 @@ def repeat_grade(request, student_id):
             status=status.HTTP_404_NOT_FOUND,
         )
 
-    # Graduated students cannot repeat.
-    if student.status == Student.Status.GRADUATED:
+    # Only active students can repeat a grade.
+    if student.status != Student.Status.ACTIVE:
         return Response(
-            {"error": "A graduated student cannot repeat a grade."},
-            status=status.HTTP_400_BAD_REQUEST,
-        )
-
-    # Transferred students are no longer active in this school.
-    if student.status == Student.Status.TRANSFERRED:
-        return Response(
-            {"error": "A transferred student cannot repeat a grade."},
+            {
+                "error": (
+                    "Only active students can repeat a grade."
+                )
+            },
             status=status.HTTP_400_BAD_REQUEST,
         )
 
@@ -720,6 +731,7 @@ def repeat_grade(request, student_id):
             "grade_level",
             "academic_year",
         ).get(id=class_section_id)
+
     except ClassSection.DoesNotExist:
         return Response(
             {"error": "Class section not found."},
@@ -771,6 +783,18 @@ def repeat_grade(request, student_id):
 
     new_year = new_section.academic_year
 
+    # Destination academic year must not be closed.
+    if new_year.is_closed:
+        return Response(
+            {
+                "error": (
+                    "Students cannot repeat a grade in "
+                    "a closed academic year."
+                )
+            },
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
     # Repeat must happen in a later academic year.
     if new_year.start_date <= current_year.start_date:
         return Response(
@@ -783,7 +807,7 @@ def repeat_grade(request, student_id):
             status=status.HTTP_400_BAD_REQUEST,
         )
 
-    # Prevent duplicate enrollment.
+    # Prevent duplicate enrollment in destination section.
     if StudentEnrollment.objects.filter(
         student=student,
         class_section=new_section,
@@ -798,12 +822,13 @@ def repeat_grade(request, student_id):
             status=status.HTTP_400_BAD_REQUEST,
         )
 
-    # Complete old enrollment and create the repeat
-    # enrollment together.
+    # Complete the old enrollment and create the new
+    # repeat enrollment in one database transaction.
     with transaction.atomic():
         current_enrollment.status = (
             StudentEnrollment.Status.COMPLETED
         )
+
         current_enrollment.save(
             update_fields=["status"]
         )
@@ -814,7 +839,9 @@ def repeat_grade(request, student_id):
             status=StudentEnrollment.Status.ACTIVE,
         )
 
+        # Keep Student.grade_level synchronized.
         student.grade_level = new_grade
+
         student.save(
             update_fields=["grade_level"]
         )
