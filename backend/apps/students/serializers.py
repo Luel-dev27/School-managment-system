@@ -41,3 +41,28 @@ class AttendanceSerializer(serializers.ModelSerializer):
             "status",
         ]
         read_only_fields = ["id"]
+
+    def validate(self, data):
+        enrollment = data.get(
+            "enrollment",
+            getattr(self.instance, "enrollment", None),
+        )
+
+        if enrollment:
+            academic_year = (
+                enrollment
+                .class_section
+                .academic_year
+            )
+
+            if academic_year.is_closed:
+                raise serializers.ValidationError(
+                    {
+                        "enrollment": (
+                            "Attendance cannot be changed "
+                            "for a closed academic year."
+                        )
+                    }
+                )
+
+        return data

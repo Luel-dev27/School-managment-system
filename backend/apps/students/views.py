@@ -451,11 +451,29 @@ def attendance_detail(request, attendance_id):
 
     # DELETE
     if request.method == "DELETE":
+        academic_year = (
+            attendance
+            .enrollment
+            .class_section
+            .academic_year
+       )
+
+        if academic_year.is_closed:
+            return Response(
+                {
+                    "error": (
+                        "Attendance cannot be deleted "
+                        "from a closed academic year."
+                   )
+              },
+               status=status.HTTP_400_BAD_REQUEST,
+          )
+
         attendance.delete()
 
         return Response(
             status=status.HTTP_204_NO_CONTENT,
-        )
+      )
 
 @api_view(["POST"])
 @permission_classes([CanAccessStudents])
