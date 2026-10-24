@@ -524,9 +524,11 @@ def teaching_assignment_list(request):
 @permission_classes([CanAccessAcademics])
 def teaching_assignment_detail(request, assignment_id):
     try:
-        assignment = TeachingAssignment.objects.get(
-            id=assignment_id
-        )
+        assignment = TeachingAssignment.objects.select_related(
+            "class_section",
+            "class_section__academic_year",
+        ).get(id=assignment_id)
+
     except TeachingAssignment.DoesNotExist:
         return Response(
             {"error": "Teaching assignment not found"},
@@ -561,9 +563,35 @@ def teaching_assignment_detail(request, assignment_id):
         )
 
     elif request.method == "DELETE":
-        assignment.delete()
-        return Response(status=status.HTTP_204_NO_CONTENT)
+        academic_year = assignment.class_section.academic_year
 
+        if academic_year.is_closed:
+            return Response(
+                {
+                    "error": (
+                        "Teaching assignments cannot be deleted "
+                        "from a closed academic year."
+                    )
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        try:
+            assignment.delete()
+            return Response(
+                status=status.HTTP_204_NO_CONTENT,
+            )
+
+        except Exception:
+            return Response(
+                {
+                    "error": (
+                        "Cannot delete this teaching assignment "
+                        "because other records may depend on it."
+                    )
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
 
 @api_view(["GET", "POST"])
 @permission_classes([CanAccessResults])

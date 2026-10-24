@@ -130,7 +130,6 @@ class ClassSectionSerializer(serializers.ModelSerializer):
             )
 
         return data
-
 class TeachingAssignmentSerializer(serializers.ModelSerializer):
     class Meta:
         model = TeachingAssignment
@@ -141,6 +140,28 @@ class TeachingAssignmentSerializer(serializers.ModelSerializer):
             "class_section",
         ]
         read_only_fields = ["id"]
+
+    def validate(self, data):
+        class_section = data.get(
+            "class_section",
+            getattr(self.instance, "class_section", None),
+        )
+
+        if class_section:
+            academic_year = class_section.academic_year
+
+            if academic_year.is_closed:
+                raise serializers.ValidationError(
+                    {
+                        "class_section": (
+                            "Teaching assignments cannot be "
+                            "created or changed in a closed "
+                            "academic year."
+                        )
+                    }
+                )
+
+        return data
 
 
 class ResultSerializer(serializers.ModelSerializer):
