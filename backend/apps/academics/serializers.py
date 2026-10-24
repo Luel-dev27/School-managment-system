@@ -113,6 +113,23 @@ class ClassSectionSerializer(serializers.ModelSerializer):
         ]
         read_only_fields = ["id"]
 
+    def validate(self, data):
+        academic_year = data.get(
+            "academic_year",
+            getattr(self.instance, "academic_year", None),
+        )
+
+        if academic_year and academic_year.is_closed:
+            raise serializers.ValidationError(
+                {
+                    "academic_year": (
+                        "Class sections cannot be created "
+                        "or changed in a closed academic year."
+                    )
+                }
+            )
+
+        return data
 
 class TeachingAssignmentSerializer(serializers.ModelSerializer):
     class Meta:

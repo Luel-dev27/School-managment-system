@@ -398,23 +398,30 @@ def section_list(request):
 @permission_classes([CanAccessAcademics])
 def section_detail(request, section_id):
     try:
-        section = ClassSection.objects.get(id=section_id)
+        section = ClassSection.objects.select_related(
+            "academic_year",
+            "grade_level",
+        ).get(id=section_id)
+
     except ClassSection.DoesNotExist:
         return Response(
             {"error": "Class section not found"},
             status=status.HTTP_404_NOT_FOUND,
         )
 
+    # READ
     if request.method == "GET":
         serializer = ClassSectionSerializer(section)
         return Response(serializer.data)
 
+    # FULL UPDATE
     elif request.method == "PUT":
         serializer = ClassSectionSerializer(
             section,
             data=request.data,
         )
 
+    # PARTIAL UPDATE
     elif request.method == "PATCH":
         serializer = ClassSectionSerializer(
             section,
@@ -422,6 +429,7 @@ def section_detail(request, section_id):
             partial=True,
         )
 
+    # SAVE UPDATE
     if request.method in ["PUT", "PATCH"]:
         if serializer.is_valid():
             serializer.save()
@@ -432,10 +440,28 @@ def section_detail(request, section_id):
             status=status.HTTP_400_BAD_REQUEST,
         )
 
+    # DELETE
     elif request.method == "DELETE":
+        # Historical sections from a closed academic
+        # year must not be deleted.
+        if section.academic_year.is_closed:
+            return Response(
+                {
+                    "error": (
+                        "Class sections cannot be deleted "
+                        "from a closed academic year."
+                    )
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
         try:
             section.delete()
-            return Response(status=status.HTTP_204_NO_CONTENT)
+
+            return Response(
+                status=status.HTTP_204_NO_CONTENT,
+            )
+
         except Exception:
             return Response(
                 {
@@ -446,7 +472,6 @@ def section_detail(request, section_id):
                 },
                 status=status.HTTP_400_BAD_REQUEST,
             )
-
 @api_view(["GET", "POST"])
 @permission_classes([CanAccessAcademics])
 def teaching_assignment_list(request):
