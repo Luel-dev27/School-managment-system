@@ -890,6 +890,7 @@ def graduate_student(request, student_id):
             status=status.HTTP_403_FORBIDDEN,
         )
 
+    # Find the student.
     try:
         student = Student.objects.get(id=student_id)
     except Student.DoesNotExist:
@@ -898,12 +899,14 @@ def graduate_student(request, student_id):
             status=status.HTTP_404_NOT_FOUND,
         )
 
+    # Prevent duplicate graduation.
     if student.status == Student.Status.GRADUATED:
         return Response(
             {"error": "Student is already graduated."},
             status=status.HTTP_400_BAD_REQUEST,
         )
 
+    # Find the student's active enrollment.
     current_enrollment = (
         StudentEnrollment.objects
         .select_related(
@@ -924,8 +927,34 @@ def graduate_student(request, student_id):
             status=status.HTTP_400_BAD_REQUEST,
         )
 
-    grade_level = current_enrollment.class_section.grade_level
+    # Get the academic year of the active enrollment.
+    academic_year = (
+        current_enrollment
+        .class_section
+        .academic_year
+    )
 
+    # Do not change enrollment history in a closed year.
+    if academic_year.is_closed:
+        return Response(
+            {
+                "error": (
+                    "Student cannot be graduated because "
+                    "the active enrollment belongs to a "
+                    "closed academic year."
+                )
+            },
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    # Get the student's current grade.
+    grade_level = (
+        current_enrollment
+        .class_section
+        .grade_level
+    )
+
+    # Graduation is only allowed from a final grade.
     if not grade_level.is_final_grade:
         return Response(
             {
@@ -937,47 +966,53 @@ def graduate_student(request, student_id):
             status=status.HTTP_400_BAD_REQUEST,
         )
 
+    # Complete the enrollment and graduate the student
+    # together in one database transaction.
     with transaction.atomic():
         current_enrollment.status = (
             StudentEnrollment.Status.COMPLETED
         )
+
         current_enrollment.save(
             update_fields=["status"]
         )
 
-        # Keep the student's grade synchronized with
-        # the final enrollment.
+        # Keep the student's grade synchronized
+        # with the final enrollment.
         student.grade_level = grade_level
         student.status = Student.Status.GRADUATED
+
         student.save(
-            update_fields=["grade_level", "status"]
+            update_fields=[
+                "grade_level",
+                "status",
+            ]
         )
 
-    return Response({
-        "message": "Student graduated successfully.",
-        "student": {
-            "id": student.id,
-            "student_id": student.student_id,
-            "name": (
-                f"{student.first_name} "
-                f"{student.last_name}"
-            ),
-            "status": student.status,
+    return Response(
+        {
+            "message": "Student graduated successfully.",
+            "student": {
+                "id": student.id,
+                "student_id": student.student_id,
+                "name": (
+                    f"{student.first_name} "
+                    f"{student.last_name}"
+                ),
+                "status": student.status,
+            },
+            "final_enrollment": {
+                "id": current_enrollment.id,
+                "grade": grade_level.number,
+                "section": (
+                    current_enrollment.class_section.name
+                ),
+                "academic_year": academic_year.name,
+                "status": current_enrollment.status,
+            },
         },
-        "final_enrollment": {
-            "id": current_enrollment.id,
-            "grade": grade_level.number,
-            "section": current_enrollment.class_section.name,
-            "academic_year": (
-                current_enrollment
-                .class_section
-                .academic_year
-                .name
-            ),
-            "status": current_enrollment.status,
-        },
-    })
-
+        status=status.HTTP_200_OK,
+    )
 @api_view(["POST"])
 @permission_classes([CanAccessStudents])
 def transfer_student(request, student_id):
