@@ -827,9 +827,12 @@ def timetable_list(request):
 @permission_classes([CanAccessAcademics])
 def timetable_detail(request, timetable_id):
     try:
-        timetable = Timetable.objects.get(
-            id=timetable_id
-        )
+        timetable = Timetable.objects.select_related(
+            "teaching_assignment",
+            "teaching_assignment__class_section",
+            "teaching_assignment__class_section__academic_year",
+        ).get(id=timetable_id)
+
     except Timetable.DoesNotExist:
         return Response(
             {"error": "Timetable not found."},
@@ -857,6 +860,24 @@ def timetable_detail(request, timetable_id):
         )
 
     if request.method == "DELETE":
+        academic_year = (
+            timetable
+            .teaching_assignment
+            .class_section
+            .academic_year
+        )
+
+        if academic_year.is_closed:
+            return Response(
+                {
+                    "error": (
+                        "Timetable entries cannot be deleted "
+                        "from a closed academic year."
+                    )
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
         timetable.delete()
 
         return Response(

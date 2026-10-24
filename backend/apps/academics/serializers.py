@@ -250,15 +250,37 @@ class TimetableSerializer(serializers.ModelSerializer):
         read_only_fields = ["id"]
 
     def validate(self, data):
-        timetable = Timetable(
-            teaching_assignment=data.get(
+        teaching_assignment = data.get(
+            "teaching_assignment",
+            getattr(
+                self.instance,
                 "teaching_assignment",
-                getattr(
-                    self.instance,
-                    "teaching_assignment",
-                    None,
-                ),
+                None,
             ),
+        )
+
+        # Protect timetable records that belong
+        # to a closed academic year.
+        if teaching_assignment:
+            academic_year = (
+                teaching_assignment
+                .class_section
+                .academic_year
+            )
+
+            if academic_year.is_closed:
+                raise serializers.ValidationError(
+                    {
+                        "teaching_assignment": (
+                            "Timetable entries cannot be "
+                            "created or changed in a closed "
+                            "academic year."
+                        )
+                    }
+                )
+
+        timetable = Timetable(
+            teaching_assignment=teaching_assignment,
             day_of_week=data.get(
                 "day_of_week",
                 getattr(
@@ -285,13 +307,14 @@ class TimetableSerializer(serializers.ModelSerializer):
             ),
         )
 
-        # Important for PATCH/PUT:
-        # exclude the current timetable from conflict checking.
+        # For PATCH/PUT, exclude the current
+        # timetable from conflict checking.
         if self.instance:
             timetable.pk = self.instance.pk
 
         try:
             timetable.clean()
+
         except DjangoValidationError as error:
             raise serializers.ValidationError(
                 error.messages
