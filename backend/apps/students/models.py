@@ -59,8 +59,14 @@ class StudentEnrollment(models.Model):
             models.UniqueConstraint(
                 fields=["student", "class_section"],
                 name="unique_student_class_enrollment",
-            )
-        ]
+           ),
+
+            models.UniqueConstraint(
+                fields=["student"],
+                condition=models.Q(status="active"),
+                name="unique_active_enrollment_per_student",
+          ),
+     ]
 
     def __str__(self):
         return (
