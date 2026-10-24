@@ -43,9 +43,38 @@ class AcademicYearSerializer(serializers.ModelSerializer):
             "id",
             "is_current",
             "is_closed",
-       ]
+        ]
 
     def validate(self, data):
+        # Once an academic year is closed,
+        # its historical information cannot be changed.
+        if self.instance and self.instance.is_closed:
+            protected_fields = [
+                "name",
+                "start_date",
+                "end_date",
+            ]
+
+            changed_fields = []
+
+            for field in protected_fields:
+                if field in data:
+                    old_value = getattr(self.instance, field)
+                    new_value = data[field]
+
+                    if new_value != old_value:
+                        changed_fields.append(field)
+
+            if changed_fields:
+                raise serializers.ValidationError(
+                    {
+                        "error": (
+                            "A closed academic year cannot "
+                            "be modified."
+                        )
+                    }
+                )
+
         start_date = data.get(
             "start_date",
             getattr(self.instance, "start_date", None),
@@ -68,19 +97,23 @@ class AcademicYearSerializer(serializers.ModelSerializer):
 
         # End date must be later than start date.
         if start_date and end_date and start_date >= end_date:
-            raise serializers.ValidationError({
-                "end_date": (
-                    "End date must be later than start date."
-                )
-            })
+            raise serializers.ValidationError(
+                {
+                    "end_date": (
+                        "End date must be later than start date."
+                    )
+                }
+            )
 
         # A closed academic year cannot also be current.
         if is_current and is_closed:
-            raise serializers.ValidationError({
-                "is_closed": (
-                    "A closed academic year cannot be current."
-                )
-            })
+            raise serializers.ValidationError(
+                {
+                    "is_closed": (
+                        "A closed academic year cannot be current."
+                    )
+                }
+            )
 
         # Only one academic year can be current.
         if is_current:
@@ -94,11 +127,13 @@ class AcademicYearSerializer(serializers.ModelSerializer):
                 )
 
             if current_years.exists():
-                raise serializers.ValidationError({
-                    "is_current": (
-                        "Only one academic year can be current."
-                    )
-                })
+                raise serializers.ValidationError(
+                    {
+                        "is_current": (
+                            "Only one academic year can be current."
+                        )
+                    }
+                )
 
         return data
 
