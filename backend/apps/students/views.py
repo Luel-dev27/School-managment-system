@@ -914,10 +914,17 @@ def graduate_student(request, student_id):
         current_enrollment.status = (
             StudentEnrollment.Status.COMPLETED
         )
-        current_enrollment.save()
+        current_enrollment.save(
+            update_fields=["status"]
+        )
 
+        # Keep the student's grade synchronized with
+        # the final enrollment.
+        student.grade_level = grade_level
         student.status = Student.Status.GRADUATED
-        student.save()
+        student.save(
+            update_fields=["grade_level", "status"]
+        )
 
     return Response({
         "message": "Student graduated successfully.",
@@ -943,7 +950,6 @@ def graduate_student(request, student_id):
             "status": current_enrollment.status,
         },
     })
-
 
 @api_view(["POST"])
 @permission_classes([CanAccessStudents])

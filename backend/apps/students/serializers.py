@@ -35,11 +35,28 @@ class StudentEnrollmentSerializer(serializers.ModelSerializer):
         ]
 
     def validate(self, data):
+        student = data.get(
+            "student",
+            getattr(self.instance, "student", None),
+        )
+
         class_section = data.get(
             "class_section",
             getattr(self.instance, "class_section", None),
         )
 
+        # Only active students can have an active enrollment.
+        if student and student.status != Student.Status.ACTIVE:
+            raise serializers.ValidationError(
+                {
+                    "student": (
+                        "Only active students can be enrolled."
+                    )
+                }
+            )
+
+        # Do not create or move enrollments into
+        # a closed academic year.
         if class_section:
             academic_year = class_section.academic_year
 
@@ -54,7 +71,6 @@ class StudentEnrollmentSerializer(serializers.ModelSerializer):
                 )
 
         return data
-
 
 class AttendanceSerializer(serializers.ModelSerializer):
     class Meta:
