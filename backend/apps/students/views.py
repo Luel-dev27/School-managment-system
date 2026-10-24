@@ -1,4 +1,5 @@
 from django.db.models import Q
+from django.db import transaction
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.response import Response
 from rest_framework import status
@@ -527,19 +528,22 @@ def promote_student(request, student_id):
         )
 
     # Destination must belong to a different academic year.
-    if (
-        new_section.academic_year_id
-        == current_enrollment.class_section.academic_year_id
-    ):
+    current_year = (
+       current_enrollment.class_section.academic_year
+   )
+
+    new_year = new_section.academic_year
+
+    if new_year.start_date <= current_year.start_date:
         return Response(
-            {
+           {
                 "error": (
-                    "Promotion must be to a different "
+                    "Promotion must be to a later "
                     "academic year."
-                )
+               )
             },
             status=status.HTTP_400_BAD_REQUEST,
-        )
+      )
 
     # Prevent duplicate enrollment in the destination section.
     if StudentEnrollment.objects.filter(
@@ -556,18 +560,19 @@ def promote_student(request, student_id):
             status=status.HTTP_400_BAD_REQUEST,
         )
 
-    # Preserve the old enrollment but mark it completed.
-    current_enrollment.status = (
-        StudentEnrollment.Status.COMPLETED
-    )
-    current_enrollment.save()
+    # Complete the old enrollment and create the new
+    # enrollment as one database transaction.
+    with transaction.atomic():
+        current_enrollment.status = (
+            StudentEnrollment.Status.COMPLETED
+        )
+        current_enrollment.save()
 
-    # Create the new active enrollment.
-    new_enrollment = StudentEnrollment.objects.create(
-        student=student,
-        class_section=new_section,
-        status=StudentEnrollment.Status.ACTIVE,
-    )
+        new_enrollment = StudentEnrollment.objects.create(
+            student=student,
+            class_section=new_section,
+            status=StudentEnrollment.Status.ACTIVE,
+      )
 
     return Response(
         {
