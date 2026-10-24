@@ -1,8 +1,10 @@
 from django.urls import path
 
 from .views import (
+    close_academic_year,
     grade_list,
     grade_detail,
+    start_academic_year,
     subject_list,
     subject_detail,
     academic_year_list,
@@ -110,4 +112,15 @@ urlpatterns = [
         report_card,
         name="report-card",
     ),
+
+    path(
+    "years/<int:year_id>/close/",
+    close_academic_year,
+    name="close-academic-year",
+    ),
+    path(
+    "years/<int:year_id>/start/",
+    start_academic_year,
+    name="start-academic-year",
+   ),
 ]

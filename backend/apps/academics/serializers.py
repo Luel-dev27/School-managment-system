@@ -37,6 +37,7 @@ class AcademicYearSerializer(serializers.ModelSerializer):
             "start_date",
             "end_date",
             "is_current",
+            "is_closed",
         ]
         read_only_fields = ["id"]
 
@@ -56,11 +57,24 @@ class AcademicYearSerializer(serializers.ModelSerializer):
             getattr(self.instance, "is_current", False),
         )
 
-        # Validate academic year dates.
+        is_closed = data.get(
+            "is_closed",
+            getattr(self.instance, "is_closed", False),
+        )
+
+        # End date must be later than start date.
         if start_date and end_date and start_date >= end_date:
             raise serializers.ValidationError({
                 "end_date": (
                     "End date must be later than start date."
+                )
+            })
+
+        # A closed academic year cannot also be current.
+        if is_current and is_closed:
+            raise serializers.ValidationError({
+                "is_closed": (
+                    "A closed academic year cannot be current."
                 )
             })
 
@@ -83,8 +97,6 @@ class AcademicYearSerializer(serializers.ModelSerializer):
                 })
 
         return data
-
-    
 
 class ClassSectionSerializer(serializers.ModelSerializer):
     class Meta:

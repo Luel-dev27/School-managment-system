@@ -9,13 +9,17 @@ class AcademicYear(models.Model):
     end_date = models.DateField()
     is_current = models.BooleanField(default=False)
 
+    is_closed = models.BooleanField(
+    default=False,
+)
+
     def __str__(self):
         return self.name
 
 
 class GradeLevel(models.Model):
     number = models.PositiveSmallIntegerField(unique=True)
-    
+
     is_final_grade = models.BooleanField(default=False)
 
     def __str__(self):

@@ -1,6 +1,7 @@
 from django.shortcuts import render
 
 # Create your views here.
+from django.db import transaction
 from apps.students.models import Student, StudentEnrollment
 from rest_framework.decorators import api_view, permission_classes
 from apps.accounts.permissions import CanAccessResults, CanAccessAcademics, CanAccessStudents
@@ -191,6 +192,7 @@ def subject_detail(request, subject_id):
 
 
 # -------------------------
+# -------------------------
 # Academic Years API
 # -------------------------
 
@@ -269,8 +271,101 @@ def academic_year_detail(request, year_id):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        return Response(status=status.HTTP_204_NO_CONTENT)
+        return Response(
+            status=status.HTTP_204_NO_CONTENT
+        )
 
+
+# -------------------------
+# Close Academic Year
+# -------------------------
+
+@api_view(["POST"])
+@permission_classes([CanAccessAcademics])
+def close_academic_year(request, year_id):
+    # Only Admin users can close an academic year.
+    if not (
+        request.user.is_superuser
+        or request.user.groups.filter(name="Admin").exists()
+    ):
+        return Response(
+            {
+                "error": (
+                    "Only admins can close an academic year."
+                )
+            },
+            status=status.HTTP_403_FORBIDDEN,
+        )
+
+    # Find the academic year.
+    try:
+        academic_year = AcademicYear.objects.get(
+            id=year_id
+        )
+    except AcademicYear.DoesNotExist:
+        return Response(
+            {"error": "Academic year not found."},
+            status=status.HTTP_404_NOT_FOUND,
+        )
+
+    # Prevent closing the same year twice.
+    if academic_year.is_closed:
+        return Response(
+            {
+                "error": (
+                    "Academic year is already closed."
+                )
+            },
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    # Check whether this academic year still has
+    # active student enrollments.
+    has_active_enrollments = (
+        StudentEnrollment.objects.filter(
+            class_section__academic_year=academic_year,
+            status=StudentEnrollment.Status.ACTIVE,
+        ).exists()
+    )
+
+    # Do not close a year while students are still active.
+    if has_active_enrollments:
+        return Response(
+            {
+                "error": (
+                    "Academic year cannot be closed while "
+                    "it has active student enrollments."
+                )
+            },
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    # Safely close the academic year.
+    with transaction.atomic():
+        academic_year.is_current = False
+        academic_year.is_closed = True
+
+        academic_year.save(
+            update_fields=[
+                "is_current",
+                "is_closed",
+            ]
+        )
+
+    return Response(
+        {
+            "message": (
+                "Academic year closed successfully."
+            ),
+            "academic_year": {
+                "id": academic_year.id,
+                "name": academic_year.name,
+                "is_current": academic_year.is_current,
+                "is_closed": academic_year.is_closed,
+            },
+        },
+        status=status.HTTP_200_OK,
+    )
 
 @api_view(["GET", "POST"])
 @permission_classes([CanAccessAcademics])
@@ -857,3 +952,87 @@ def report_card(request, student_id):
 
         "overall_average": overall_average,
     })
+
+
+@api_view(["POST"])
+@permission_classes([CanAccessAcademics])
+def start_academic_year(request, year_id):
+    # Only Admin users can start an academic year.
+    if not (
+        request.user.is_superuser
+        or request.user.groups.filter(name="Admin").exists()
+    ):
+        return Response(
+            {
+                "error": (
+                    "Only admins can start an academic year."
+                )
+            },
+            status=status.HTTP_403_FORBIDDEN,
+        )
+
+    # Find the academic year.
+    try:
+        academic_year = AcademicYear.objects.get(
+            id=year_id
+        )
+    except AcademicYear.DoesNotExist:
+        return Response(
+            {"error": "Academic year not found."},
+            status=status.HTTP_404_NOT_FOUND,
+        )
+
+    # Closed years cannot be started again.
+    if academic_year.is_closed:
+        return Response(
+            {
+                "error": (
+                    "A closed academic year cannot be started."
+                )
+            },
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    # Prevent starting the same year twice.
+    if academic_year.is_current:
+        return Response(
+            {
+                "error": (
+                    "Academic year is already current."
+                )
+            },
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    # Only one academic year can be current.
+    if AcademicYear.objects.filter(
+        is_current=True
+    ).exists():
+        return Response(
+            {
+                "error": (
+                    "Another academic year is already current."
+                )
+            },
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    academic_year.is_current = True
+    academic_year.save(
+        update_fields=["is_current"]
+    )
+
+    return Response(
+        {
+            "message": (
+                "Academic year started successfully."
+            ),
+            "academic_year": {
+                "id": academic_year.id,
+                "name": academic_year.name,
+                "is_current": academic_year.is_current,
+                "is_closed": academic_year.is_closed,
+            },
+        },
+        status=status.HTTP_200_OK,
+    )
