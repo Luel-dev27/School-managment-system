@@ -479,6 +479,17 @@ def promote_student(request, student_id):
             status=status.HTTP_404_NOT_FOUND,
         )
 
+    # Only active students can be promoted.
+    if student.status != Student.Status.ACTIVE:
+        return Response(
+            {
+                "error": (
+                    "Only active students can be promoted."
+                )
+            },
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
     # Get destination class section.
     class_section_id = request.data.get("class_section")
 
@@ -488,6 +499,7 @@ def promote_student(request, student_id):
             status=status.HTTP_400_BAD_REQUEST,
         )
 
+    # Find destination class section.
     try:
         new_section = ClassSection.objects.select_related(
             "grade_level",
@@ -499,7 +511,7 @@ def promote_student(request, student_id):
             status=status.HTTP_404_NOT_FOUND,
         )
 
-    # Find the student's latest enrollment.
+    # Find the student's current active enrollment.
     current_enrollment = (
         StudentEnrollment.objects
         .select_related(
@@ -507,14 +519,16 @@ def promote_student(request, student_id):
             "class_section__grade_level",
             "class_section__academic_year",
         )
-        .filter(student=student)
-        .order_by("-enrollment_date", "-id")
+        .filter(
+            student=student,
+            status=StudentEnrollment.Status.ACTIVE,
+        )
         .first()
     )
 
     if current_enrollment is None:
         return Response(
-            {"error": "Student has no enrollment."},
+            {"error": "Student has no active enrollment."},
             status=status.HTTP_400_BAD_REQUEST,
         )
 
@@ -531,10 +545,13 @@ def promote_student(request, student_id):
             status=status.HTTP_400_BAD_REQUEST,
         )
 
-    old_grade = current_enrollment.class_section.grade_level.number
+    old_grade = (
+        current_enrollment.class_section.grade_level.number
+    )
+
     new_grade = new_section.grade_level.number
 
-    # The destination must be exactly one grade higher.
+    # Destination must be exactly one grade higher.
     if new_grade != old_grade + 1:
         return Response(
             {
@@ -564,7 +581,7 @@ def promote_student(request, student_id):
             status=status.HTTP_400_BAD_REQUEST,
         )
 
-    # Prevent duplicate enrollment in the destination section.
+    # Prevent duplicate enrollment in destination section.
     if StudentEnrollment.objects.filter(
         student=student,
         class_section=new_section,
@@ -579,13 +596,16 @@ def promote_student(request, student_id):
             status=status.HTTP_400_BAD_REQUEST,
         )
 
-    # Complete the old enrollment and create the new
-    # enrollment as one database transaction.
+    # Complete the current enrollment and create the
+    # new enrollment in one database transaction.
     with transaction.atomic():
         current_enrollment.status = (
             StudentEnrollment.Status.COMPLETED
         )
-        current_enrollment.save()
+
+        current_enrollment.save(
+            update_fields=["status"]
+        )
 
         new_enrollment = StudentEnrollment.objects.create(
             student=student,
@@ -593,9 +613,12 @@ def promote_student(request, student_id):
             status=StudentEnrollment.Status.ACTIVE,
         )
 
-        # Keep the student's current grade synchronized.
+        # Keep Student.grade_level synchronized.
         student.grade_level = new_section.grade_level
-        student.save(update_fields=["grade_level"])
+
+        student.save(
+            update_fields=["grade_level"]
+        )
 
     return Response(
         {
@@ -614,19 +637,195 @@ def promote_student(request, student_id):
                 "section": (
                     current_enrollment.class_section.name
                 ),
-                "academic_year": (
-                    current_enrollment
-                    .class_section
-                    .academic_year
-                    .name
-                ),
+                "academic_year": current_year.name,
                 "status": current_enrollment.status,
             },
             "new_enrollment": {
                 "id": new_enrollment.id,
                 "grade": new_grade,
                 "section": new_section.name,
-                "academic_year": new_section.academic_year.name,
+                "academic_year": new_year.name,
+                "status": new_enrollment.status,
+            },
+        },
+        status=status.HTTP_201_CREATED,
+    )
+
+@api_view(["POST"])
+@permission_classes([CanAccessStudents])
+def repeat_grade(request, student_id):
+    # Only Admin users can repeat a student's grade.
+    if not (
+        request.user.is_superuser
+        or request.user.groups.filter(name="Admin").exists()
+    ):
+        return Response(
+            {"error": "Only admins can repeat student grades."},
+            status=status.HTTP_403_FORBIDDEN,
+        )
+
+    # Find the student.
+    try:
+        student = Student.objects.get(id=student_id)
+    except Student.DoesNotExist:
+        return Response(
+            {"error": "Student not found."},
+            status=status.HTTP_404_NOT_FOUND,
+        )
+
+    # Graduated students cannot repeat.
+    if student.status == Student.Status.GRADUATED:
+        return Response(
+            {"error": "A graduated student cannot repeat a grade."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    # Transferred students are no longer active in this school.
+    if student.status == Student.Status.TRANSFERRED:
+        return Response(
+            {"error": "A transferred student cannot repeat a grade."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    # Destination section is required.
+    class_section_id = request.data.get("class_section")
+
+    if not class_section_id:
+        return Response(
+            {"error": "class_section is required."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    # Find destination section.
+    try:
+        new_section = ClassSection.objects.select_related(
+            "grade_level",
+            "academic_year",
+        ).get(id=class_section_id)
+    except ClassSection.DoesNotExist:
+        return Response(
+            {"error": "Class section not found."},
+            status=status.HTTP_404_NOT_FOUND,
+        )
+
+    # Find current active enrollment.
+    current_enrollment = (
+        StudentEnrollment.objects
+        .select_related(
+            "class_section",
+            "class_section__grade_level",
+            "class_section__academic_year",
+        )
+        .filter(
+            student=student,
+            status=StudentEnrollment.Status.ACTIVE,
+        )
+        .first()
+    )
+
+    if current_enrollment is None:
+        return Response(
+            {"error": "Student has no active enrollment."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    current_grade = (
+        current_enrollment.class_section.grade_level
+    )
+
+    new_grade = new_section.grade_level
+
+    # Repeat must stay in the same grade.
+    if new_grade.id != current_grade.id:
+        return Response(
+            {
+                "error": (
+                    "A repeating student must remain "
+                    "in the same grade."
+                )
+            },
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    current_year = (
+        current_enrollment.class_section.academic_year
+    )
+
+    new_year = new_section.academic_year
+
+    # Repeat must happen in a later academic year.
+    if new_year.start_date <= current_year.start_date:
+        return Response(
+            {
+                "error": (
+                    "Repeat enrollment must be in a "
+                    "later academic year."
+                )
+            },
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    # Prevent duplicate enrollment.
+    if StudentEnrollment.objects.filter(
+        student=student,
+        class_section=new_section,
+    ).exists():
+        return Response(
+            {
+                "error": (
+                    "Student is already enrolled in "
+                    "this class section."
+                )
+            },
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    # Complete old enrollment and create the repeat
+    # enrollment together.
+    with transaction.atomic():
+        current_enrollment.status = (
+            StudentEnrollment.Status.COMPLETED
+        )
+        current_enrollment.save(
+            update_fields=["status"]
+        )
+
+        new_enrollment = StudentEnrollment.objects.create(
+            student=student,
+            class_section=new_section,
+            status=StudentEnrollment.Status.ACTIVE,
+        )
+
+        student.grade_level = new_grade
+        student.save(
+            update_fields=["grade_level"]
+        )
+
+    return Response(
+        {
+            "message": "Student grade repeated successfully.",
+            "student": {
+                "id": student.id,
+                "student_id": student.student_id,
+                "name": (
+                    f"{student.first_name} "
+                    f"{student.last_name}"
+                ),
+            },
+            "previous_enrollment": {
+                "id": current_enrollment.id,
+                "grade": current_grade.number,
+                "section": (
+                    current_enrollment.class_section.name
+                ),
+                "academic_year": current_year.name,
+                "status": current_enrollment.status,
+            },
+            "new_enrollment": {
+                "id": new_enrollment.id,
+                "grade": new_grade.number,
+                "section": new_section.name,
+                "academic_year": new_year.name,
                 "status": new_enrollment.status,
             },
         },

@@ -9,6 +9,7 @@ from .views import (
     attendance_detail,
     promote_student,
     transfer_student,
+    repeat_grade,
 )
 
 urlpatterns = [
@@ -35,5 +36,11 @@ urlpatterns = [
     "<int:student_id>/transfer/",
     transfer_student,
     name="transfer-student",
+   ),
+
+   path(
+    "<int:student_id>/repeat/",
+    repeat_grade,
+    name="repeat-grade",
    ),
 ]
