@@ -36,6 +36,52 @@ class AcademicYearSerializer(serializers.ModelSerializer):
         ]
         read_only_fields = ["id"]
 
+    def validate(self, data):
+        start_date = data.get(
+            "start_date",
+            getattr(self.instance, "start_date", None),
+        )
+
+        end_date = data.get(
+            "end_date",
+            getattr(self.instance, "end_date", None),
+        )
+
+        is_current = data.get(
+            "is_current",
+            getattr(self.instance, "is_current", False),
+        )
+
+        # Validate academic year dates.
+        if start_date and end_date and start_date >= end_date:
+            raise serializers.ValidationError({
+                "end_date": (
+                    "End date must be later than start date."
+                )
+            })
+
+        # Only one academic year can be current.
+        if is_current:
+            current_years = AcademicYear.objects.filter(
+                is_current=True
+            )
+
+            if self.instance:
+                current_years = current_years.exclude(
+                    pk=self.instance.pk
+                )
+
+            if current_years.exists():
+                raise serializers.ValidationError({
+                    "is_current": (
+                        "Only one academic year can be current."
+                    )
+                })
+
+        return data
+
+    
+
 class ClassSectionSerializer(serializers.ModelSerializer):
     class Meta:
         model = ClassSection
