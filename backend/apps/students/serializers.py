@@ -35,6 +35,19 @@ class StudentEnrollmentSerializer(serializers.ModelSerializer):
         ]
 
     def validate(self, data):
+        # Once an enrollment exists, it must always
+        # belong to the same student.
+        if self.instance and "student" in data:
+            if data["student"] != self.instance.student:
+                raise serializers.ValidationError(
+                    {
+                        "student": (
+                            "The student of an existing "
+                            "enrollment cannot be changed."
+                        )
+                    }
+                )
+
         # Completed and transferred enrollments are
         # historical records and cannot be modified.
         if self.instance and self.instance.status in [
