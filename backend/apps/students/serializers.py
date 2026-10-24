@@ -35,8 +35,9 @@ class StudentEnrollmentSerializer(serializers.ModelSerializer):
         ]
 
     def validate(self, data):
-        # Once an enrollment exists, it must always
-        # belong to the same student.
+        # --------------------------------------------------
+        # 1. Existing enrollment cannot change its student.
+        # --------------------------------------------------
         if self.instance and "student" in data:
             if data["student"] != self.instance.student:
                 raise serializers.ValidationError(
@@ -48,8 +49,9 @@ class StudentEnrollmentSerializer(serializers.ModelSerializer):
                     }
                 )
 
-        # Completed and transferred enrollments are
-        # historical records and cannot be modified.
+        # --------------------------------------------------
+        # 2. Historical enrollments cannot be modified.
+        # --------------------------------------------------
         if self.instance and self.instance.status in [
             StudentEnrollment.Status.COMPLETED,
             StudentEnrollment.Status.TRANSFERRED,
@@ -82,6 +84,9 @@ class StudentEnrollmentSerializer(serializers.ModelSerializer):
                     }
                 )
 
+        # --------------------------------------------------
+        # Get student and class section.
+        # --------------------------------------------------
         student = data.get(
             "student",
             getattr(
@@ -100,7 +105,9 @@ class StudentEnrollmentSerializer(serializers.ModelSerializer):
             ),
         )
 
-        # Only active students can have an active enrollment.
+        # --------------------------------------------------
+        # 3. Only active students can be enrolled.
+        # --------------------------------------------------
         if student and student.status != Student.Status.ACTIVE:
             raise serializers.ValidationError(
                 {
@@ -110,8 +117,31 @@ class StudentEnrollmentSerializer(serializers.ModelSerializer):
                 }
             )
 
-        # Do not create or move enrollments into
-        # a closed academic year.
+        # --------------------------------------------------
+        # 4. Student can have only one active enrollment.
+        # --------------------------------------------------
+        if not self.instance and student:
+            active_enrollment_exists = (
+                StudentEnrollment.objects.filter(
+                    student=student,
+                    status=StudentEnrollment.Status.ACTIVE,
+                ).exists()
+            )
+
+            if active_enrollment_exists:
+                raise serializers.ValidationError(
+                    {
+                        "student": (
+                            "This student already has an "
+                            "active enrollment."
+                        )
+                    }
+                )
+
+        # --------------------------------------------------
+        # 5. Closed academic years cannot receive
+        #    new or moved enrollments.
+        # --------------------------------------------------
         if class_section:
             academic_year = class_section.academic_year
 
