@@ -28,7 +28,7 @@ class StudentEnrollmentSerializer(serializers.ModelSerializer):
             "enrollment_date",
             "status",
         ]
-        read_only_fields = ["id", "enrollment_date"]
+        read_only_fields = ["id", "enrollment_date", "status"]
 
 
 class AttendanceSerializer(serializers.ModelSerializer):
