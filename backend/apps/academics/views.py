@@ -616,7 +616,16 @@ def result_list(request):
 @permission_classes([CanAccessResults])
 def result_detail(request, result_id):
     try:
-        result = Result.objects.get(id=result_id)
+        result = (
+            Result.objects
+            .select_related(
+                "enrollment",
+                "enrollment__student",
+                "enrollment__class_section",
+                "enrollment__class_section__academic_year",
+            )
+            .get(id=result_id)
+        )
     except Result.DoesNotExist:
         return Response(
             {"error": "Result not found."},
@@ -639,10 +648,12 @@ def result_detail(request, result_id):
                 status=status.HTTP_403_FORBIDDEN,
             )
 
+    # READ
     if request.method == "GET":
         serializer = ResultSerializer(result)
         return Response(serializer.data)
 
+    # UPDATE
     if request.method in ["PUT", "PATCH"]:
         serializer = ResultSerializer(
             result,
@@ -659,7 +670,28 @@ def result_detail(request, result_id):
             status=status.HTTP_400_BAD_REQUEST,
         )
 
+    # DELETE
     if request.method == "DELETE":
+        academic_year = (
+            result
+            .enrollment
+            .class_section
+            .academic_year
+        )
+
+        # Historical results from a closed year
+        # must not be deleted.
+        if academic_year.is_closed:
+            return Response(
+                {
+                    "error": (
+                        "Results cannot be deleted "
+                        "from a closed academic year."
+                    )
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
         result.delete()
 
         return Response(

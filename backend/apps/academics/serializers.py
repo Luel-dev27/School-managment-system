@@ -153,17 +153,38 @@ class ResultSerializer(serializers.ModelSerializer):
         )
 
         subject = data.get(
-           "subject",
-           getattr(self.instance, "subject", None),
+            "subject",
+            getattr(self.instance, "subject", None),
         )
 
+        # Do not allow results to be created or updated
+        # for a closed academic year.
+        if enrollment:
+            academic_year = (
+                enrollment
+                .class_section
+                .academic_year
+            )
+
+            if academic_year.is_closed:
+                raise serializers.ValidationError(
+                    {
+                        "enrollment": (
+                            "Results cannot be changed "
+                            "for a closed academic year."
+                        )
+                    }
+                )
+
+        # The subject must be assigned to the
+        # student's class section.
         if enrollment and subject:
             subject_is_assigned = (
                 TeachingAssignment.objects.filter(
                     class_section=enrollment.class_section,
                     subject=subject,
                 ).exists()
-           )
+            )
 
             if not subject_is_assigned:
                 raise serializers.ValidationError(
@@ -171,9 +192,9 @@ class ResultSerializer(serializers.ModelSerializer):
                         "subject": (
                             "This subject is not assigned "
                             "to the student's class section."
-                       )
-                  }
-               )
+                        )
+                    }
+                )
 
         return data
 
