@@ -6,7 +6,7 @@ from rest_framework import status
 from apps.accounts.permissions import CanAccessAttendance, CanAccessStudents, CanAccessEnrollments
 
 from apps.academics.models import ClassSection
-from .models import Student, StudentEnrollment, Attendance
+from .models import Student, StudentEnrollment, Attendance, StudentTransfer
 from .serializers import StudentSerializer, StudentEnrollmentSerializer, AttendanceSerializer
 
     
@@ -726,3 +726,133 @@ def graduate_student(request, student_id):
             "status": current_enrollment.status,
         },
     })
+
+
+@api_view(["POST"])
+@permission_classes([CanAccessStudents])
+def transfer_student(request, student_id):
+    # Only Admin users can transfer students.
+    if not (
+        request.user.is_superuser
+        or request.user.groups.filter(name="Admin").exists()
+    ):
+        return Response(
+            {"error": "Only admins can transfer students."},
+            status=status.HTTP_403_FORBIDDEN,
+        )
+
+    # Find the student.
+    try:
+        student = Student.objects.get(id=student_id)
+    except Student.DoesNotExist:
+        return Response(
+            {"error": "Student not found."},
+            status=status.HTTP_404_NOT_FOUND,
+        )
+
+    # Prevent duplicate transfer.
+    if student.status == Student.Status.TRANSFERRED:
+        return Response(
+            {"error": "Student is already transferred."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    # Graduated students should not be transferred.
+    if student.status == Student.Status.GRADUATED:
+        return Response(
+            {
+                "error": (
+                    "A graduated student cannot be transferred."
+                )
+            },
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    # Transfer date is required.
+    transfer_date = request.data.get("transfer_date")
+
+    if not transfer_date:
+        return Response(
+            {"error": "transfer_date is required."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    destination_school = request.data.get(
+        "destination_school",
+        "",
+    )
+
+    reason = request.data.get(
+        "reason",
+        "",
+    )
+
+    # Find an active enrollment, if one exists.
+    active_enrollment = (
+        StudentEnrollment.objects
+        .select_related(
+            "class_section",
+            "class_section__grade_level",
+            "class_section__academic_year",
+        )
+        .filter(
+            student=student,
+            status=StudentEnrollment.Status.ACTIVE,
+        )
+        .first()
+    )
+
+    with transaction.atomic():
+        # If the student leaves during an active grade,
+        # mark that enrollment as transferred.
+        if active_enrollment:
+            active_enrollment.status = (
+                StudentEnrollment.Status.TRANSFERRED
+            )
+            active_enrollment.save(
+                update_fields=["status"]
+            )
+
+        # If previous enrollment is already completed,
+        # we leave it unchanged.
+
+        student.status = Student.Status.TRANSFERRED
+        student.save(
+            update_fields=["status"]
+        )
+
+        transfer = StudentTransfer.objects.create(
+            student=student,
+            transfer_date=transfer_date,
+            destination_school=destination_school,
+            reason=reason,
+        )
+
+    return Response(
+        {
+            "message": "Student transferred successfully.",
+            "student": {
+                "id": student.id,
+                "student_id": student.student_id,
+                "name": (
+                    f"{student.first_name} "
+                    f"{student.last_name}"
+                ),
+                "status": student.status,
+            },
+            "transfer": {
+                "id": transfer.id,
+                "transfer_date": transfer.transfer_date,
+                "destination_school": (
+                    transfer.destination_school
+                ),
+                "reason": transfer.reason,
+            },
+            "enrollment_status": (
+                active_enrollment.status
+                if active_enrollment
+                else "No active enrollment"
+            ),
+        },
+        status=status.HTTP_200_OK,
+    )

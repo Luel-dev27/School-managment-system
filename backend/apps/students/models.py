@@ -132,3 +132,32 @@ class Attendance(models.Model):
             f"{self.date} - "
             f"{self.status}"
         )
+
+
+class StudentTransfer(models.Model):
+    student = models.ForeignKey(
+        Student,
+        on_delete=models.PROTECT,
+        related_name="transfers",
+    )
+
+    transfer_date = models.DateField()
+
+    destination_school = models.CharField(
+        max_length=200,
+        blank=True,
+    )
+
+    reason = models.TextField(
+        blank=True,
+    )
+
+    created_at = models.DateTimeField(
+        auto_now_add=True,
+    )
+
+    def __str__(self):
+        return (
+            f"{self.student} - "
+            f"Transferred on {self.transfer_date}"
+        )

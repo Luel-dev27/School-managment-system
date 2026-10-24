@@ -8,6 +8,7 @@ from .views import (
     attendance_list,
     attendance_detail,
     promote_student,
+    transfer_student,
 )
 
 urlpatterns = [
@@ -17,14 +18,22 @@ urlpatterns = [
     path("enrollments/<int:enrollment_id>/", enrollment_detail, name="enrollment-detail"),
     path("attendance/", attendance_list, name="attendance-list"),
     path("attendance/<int:attendance_id>/", attendance_detail, name="attendance-detail"),
+   
    path(
     "<int:student_id>/promote/",
     promote_student,
     name="promote-student",
     ),
+
     path(
     "<int:student_id>/graduate/",
     graduate_student,
     name="graduate-student",
     ),
+
+    path(
+    "<int:student_id>/transfer/",
+    transfer_student,
+    name="transfer-student",
+   ),
 ]
