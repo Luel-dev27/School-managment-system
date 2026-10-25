@@ -85,8 +85,8 @@ class TeachingAssignment(models.Model):
     class Meta:
         constraints = [
             models.UniqueConstraint(
-                fields=["teacher", "subject", "class_section"],
-                name="unique_teacher_subject_section",
+                fields=["subject", "class_section"],
+                name="unique_subject_per_class_section",
             )
         ]
 

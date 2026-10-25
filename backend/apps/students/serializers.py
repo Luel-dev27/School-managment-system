@@ -161,7 +161,20 @@ class AttendanceSerializer(serializers.ModelSerializer):
     def validate(self, data):
         enrollment = data.get(
             "enrollment",
-            getattr(self.instance, "enrollment", None),
+            getattr(
+                self.instance,
+                "enrollment",
+                None,
+            ),
+        )
+
+        attendance_date = data.get(
+            "date",
+            getattr(
+                self.instance,
+                "date",
+                None,
+            ),
         )
 
         if enrollment:
@@ -171,6 +184,8 @@ class AttendanceSerializer(serializers.ModelSerializer):
                 .academic_year
             )
 
+            # Attendance cannot be created or changed
+            # for a closed academic year.
             if academic_year.is_closed:
                 raise serializers.ValidationError(
                     {
@@ -180,5 +195,23 @@ class AttendanceSerializer(serializers.ModelSerializer):
                         )
                     }
                 )
+
+            # Attendance date must belong to the
+            # enrollment's academic year.
+            if attendance_date:
+                if not (
+                    academic_year.start_date
+                    <= attendance_date
+                    <= academic_year.end_date
+                ):
+                    raise serializers.ValidationError(
+                        {
+                            "date": (
+                                "Attendance date must be "
+                                "within the enrollment's "
+                                "academic year."
+                            )
+                        }
+                    )
 
         return data
