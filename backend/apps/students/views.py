@@ -5,7 +5,7 @@ from rest_framework.response import Response
 from rest_framework import status
 from apps.accounts.permissions import CanAccessAttendance, CanAccessStudents, CanAccessEnrollments
 
-from apps.academics.models import ClassSection
+from apps.academics.models import ClassSection, TeachingAssignment
 from .models import Student, StudentEnrollment, Attendance, StudentTransfer
 from .serializers import StudentSerializer, StudentEnrollmentSerializer, AttendanceSerializer
 
@@ -317,8 +317,15 @@ def enrollment_detail(request, enrollment_id):
 @api_view(["GET", "POST"])
 @permission_classes([CanAccessAttendance])
 def attendance_list(request):
+    # -------------------------
+    # READ ATTENDANCE
+    # -------------------------
     if request.method == "GET":
-        attendance_records = Attendance.objects.all()
+        attendance_records = Attendance.objects.select_related(
+            "enrollment",
+            "enrollment__student",
+            "enrollment__class_section",
+        )
 
         # SECURITY:
         # Students can only see their own attendance records.
@@ -335,26 +342,32 @@ def attendance_list(request):
                 enrollment__student=student_profile
             )
 
-        # FILTERS
+        # FILTER: By date
         date = request.query_params.get("date")
-        status_value = request.query_params.get("status")
-        student = request.query_params.get("student")
-        section = request.query_params.get("section")
 
         if date:
             attendance_records = attendance_records.filter(
                 date=date
             )
 
+        # FILTER: By attendance status
+        status_value = request.query_params.get("status")
+
         if status_value:
             attendance_records = attendance_records.filter(
                 status=status_value
             )
 
+        # FILTER: By student
+        student = request.query_params.get("student")
+
         if student:
             attendance_records = attendance_records.filter(
                 enrollment__student_id=student
             )
+
+        # FILTER: By class section
+        section = request.query_params.get("section")
 
         if section:
             attendance_records = attendance_records.filter(
@@ -368,13 +381,51 @@ def attendance_list(request):
 
         return Response(serializer.data)
 
+    # -------------------------
     # CREATE ATTENDANCE
+    # -------------------------
     if request.method == "POST":
         serializer = AttendanceSerializer(
             data=request.data
         )
 
         if serializer.is_valid():
+
+            # SECURITY:
+            # Teachers can only create attendance for
+            # students in class sections they teach.
+            if request.user.groups.filter(
+                name="Teacher"
+            ).exists():
+                try:
+                    teacher_profile = request.user.teacher_profile
+                except AttributeError:
+                    return Response(
+                        {"error": "Teacher profile not found."},
+                        status=status.HTTP_403_FORBIDDEN,
+                    )
+
+                enrollment = serializer.validated_data[
+                    "enrollment"
+                ]
+
+                is_assigned = TeachingAssignment.objects.filter(
+                    teacher=teacher_profile,
+                    class_section=enrollment.class_section,
+                ).exists()
+
+                if not is_assigned:
+                    return Response(
+                        {
+                            "error": (
+                                "You cannot create attendance "
+                                "for a class section you do "
+                                "not teach."
+                            )
+                        },
+                        status=status.HTTP_403_FORBIDDEN,
+                    )
+
             serializer.save()
 
             return Response(
@@ -395,18 +446,22 @@ def attendance_detail(request, attendance_id):
         attendance = Attendance.objects.select_related(
             "enrollment",
             "enrollment__student",
+            "enrollment__class_section",
+            "enrollment__class_section__academic_year",
         ).get(
             id=attendance_id
         )
 
     except Attendance.DoesNotExist:
         return Response(
-            {"error": "Attendance record not found"},
+            {"error": "Attendance record not found."},
             status=status.HTTP_404_NOT_FOUND,
         )
 
-    # SECURITY:
-    # A Student can only access their own attendance record.
+    # -------------------------
+    # STUDENT SECURITY
+    # -------------------------
+    # Students can only access their own attendance.
     if request.user.groups.filter(name="Student").exists():
         try:
             student_profile = request.user.student_profile
@@ -419,19 +474,59 @@ def attendance_detail(request, attendance_id):
         if attendance.enrollment.student != student_profile:
             return Response(
                 {
-                    "error":
-                    "You cannot access this attendance record."
+                    "error": (
+                        "You cannot access this "
+                        "attendance record."
+                    )
                 },
                 status=status.HTTP_403_FORBIDDEN,
             )
 
-    # READ
+    # -------------------------
+    # TEACHER SECURITY
+    # -------------------------
+    # Teachers can only modify attendance for
+    # class sections they teach.
+    if (
+        request.method in ["PUT", "PATCH", "DELETE"]
+        and request.user.groups.filter(name="Teacher").exists()
+    ):
+        try:
+            teacher_profile = request.user.teacher_profile
+        except AttributeError:
+            return Response(
+                {"error": "Teacher profile not found."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        is_assigned = TeachingAssignment.objects.filter(
+            teacher=teacher_profile,
+            class_section=attendance.enrollment.class_section,
+        ).exists()
+
+        if not is_assigned:
+            return Response(
+                {
+                    "error": (
+                        "You cannot modify attendance "
+                        "for a class section you do "
+                        "not teach."
+                    )
+                },
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+    # -------------------------
+    # READ ONE ATTENDANCE
+    # -------------------------
     if request.method == "GET":
         serializer = AttendanceSerializer(attendance)
 
         return Response(serializer.data)
 
-    # UPDATE
+    # -------------------------
+    # UPDATE ATTENDANCE
+    # -------------------------
     if request.method in ["PUT", "PATCH"]:
         serializer = AttendanceSerializer(
             attendance,
@@ -449,31 +544,34 @@ def attendance_detail(request, attendance_id):
             status=status.HTTP_400_BAD_REQUEST,
         )
 
-    # DELETE
+    # -------------------------
+    # DELETE ATTENDANCE
+    # -------------------------
     if request.method == "DELETE":
         academic_year = (
             attendance
             .enrollment
             .class_section
             .academic_year
-       )
+        )
 
+        # Closed academic-year history cannot be deleted.
         if academic_year.is_closed:
             return Response(
                 {
                     "error": (
                         "Attendance cannot be deleted "
                         "from a closed academic year."
-                   )
-              },
-               status=status.HTTP_400_BAD_REQUEST,
-          )
+                    )
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
 
         attendance.delete()
 
         return Response(
             status=status.HTTP_204_NO_CONTENT,
-      )
+        )
 
 @api_view(["POST"])
 @permission_classes([CanAccessStudents])

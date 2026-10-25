@@ -624,11 +624,19 @@ def teaching_assignment_detail(request, assignment_id):
 @api_view(["GET", "POST"])
 @permission_classes([CanAccessResults])
 def result_list(request):
+    # -------------------------
+    # READ RESULTS
+    # -------------------------
     if request.method == "GET":
-        results = Result.objects.all()
+        results = Result.objects.select_related(
+            "enrollment",
+            "enrollment__student",
+            "enrollment__class_section",
+            "subject",
+        )
 
-        # If the logged-in user is a Student,
-        # only show that student's own results.
+        # SECURITY:
+        # Students can only see their own results.
         if request.user.groups.filter(name="Student").exists():
             try:
                 student_profile = request.user.student_profile
@@ -642,26 +650,32 @@ def result_list(request):
                 enrollment__student=student_profile
             )
 
-        # Query parameter filters
+        # FILTER: By student
         student = request.query_params.get("student")
-        subject = request.query_params.get("subject")
-        term = request.query_params.get("term")
-        section = request.query_params.get("section")
 
         if student:
             results = results.filter(
                 enrollment__student_id=student
             )
 
+        # FILTER: By subject
+        subject = request.query_params.get("subject")
+
         if subject:
             results = results.filter(
                 subject_id=subject
             )
 
+        # FILTER: By term
+        term = request.query_params.get("term")
+
         if term:
             results = results.filter(
                 term=term
             )
+
+        # FILTER: By class section
+        section = request.query_params.get("section")
 
         if section:
             results = results.filter(
@@ -675,12 +689,56 @@ def result_list(request):
 
         return Response(serializer.data)
 
+    # -------------------------
+    # CREATE RESULT
+    # -------------------------
     if request.method == "POST":
         serializer = ResultSerializer(
             data=request.data
         )
 
         if serializer.is_valid():
+
+            # SECURITY:
+            # Teachers can only create a result when
+            # they teach this subject in this class.
+            if request.user.groups.filter(
+                name="Teacher"
+            ).exists():
+                try:
+                    teacher_profile = request.user.teacher_profile
+                except AttributeError:
+                    return Response(
+                        {"error": "Teacher profile not found."},
+                        status=status.HTTP_403_FORBIDDEN,
+                    )
+
+                enrollment = serializer.validated_data[
+                    "enrollment"
+                ]
+
+                subject = serializer.validated_data[
+                    "subject"
+                ]
+
+                is_assigned = TeachingAssignment.objects.filter(
+                    teacher=teacher_profile,
+                    subject=subject,
+                    class_section=enrollment.class_section,
+                ).exists()
+
+                if not is_assigned:
+                    return Response(
+                        {
+                            "error": (
+                                "You cannot create a result "
+                                "for a subject and class "
+                                "section you do not teach."
+                            )
+                        },
+                        status=status.HTTP_403_FORBIDDEN,
+                    )
+
             serializer.save()
 
             return Response(
@@ -693,27 +751,31 @@ def result_list(request):
             status=status.HTTP_400_BAD_REQUEST,
         )
 
+
 @api_view(["GET", "PUT", "PATCH", "DELETE"])
 @permission_classes([CanAccessResults])
 def result_detail(request, result_id):
     try:
-        result = (
-            Result.objects
-            .select_related(
-                "enrollment",
-                "enrollment__student",
-                "enrollment__class_section",
-                "enrollment__class_section__academic_year",
-            )
-            .get(id=result_id)
+        result = Result.objects.select_related(
+            "enrollment",
+            "enrollment__student",
+            "enrollment__class_section",
+            "enrollment__class_section__academic_year",
+            "subject",
+        ).get(
+            id=result_id
         )
+
     except Result.DoesNotExist:
         return Response(
             {"error": "Result not found."},
             status=status.HTTP_404_NOT_FOUND,
         )
 
-    # Students can only access their own result.
+    # -------------------------
+    # STUDENT SECURITY
+    # -------------------------
+    # Students can only access their own results.
     if request.user.groups.filter(name="Student").exists():
         try:
             student_profile = request.user.student_profile
@@ -729,12 +791,17 @@ def result_detail(request, result_id):
                 status=status.HTTP_403_FORBIDDEN,
             )
 
-    # READ
+    # -------------------------
+    # READ ONE RESULT
+    # -------------------------
     if request.method == "GET":
         serializer = ResultSerializer(result)
+
         return Response(serializer.data)
 
-    # UPDATE
+    # -------------------------
+    # UPDATE RESULT
+    # -------------------------
     if request.method in ["PUT", "PATCH"]:
         serializer = ResultSerializer(
             result,
@@ -743,7 +810,55 @@ def result_detail(request, result_id):
         )
 
         if serializer.is_valid():
+
+            # SECURITY:
+            # For an update, check the TARGET enrollment
+            # and TARGET subject.
+            #
+            # This prevents a teacher from changing a
+            # result to another class or subject that
+            # they do not teach.
+            if request.user.groups.filter(
+                name="Teacher"
+            ).exists():
+                try:
+                    teacher_profile = request.user.teacher_profile
+                except AttributeError:
+                    return Response(
+                        {"error": "Teacher profile not found."},
+                        status=status.HTTP_403_FORBIDDEN,
+                    )
+
+                enrollment = serializer.validated_data.get(
+                    "enrollment",
+                    result.enrollment,
+                )
+
+                subject = serializer.validated_data.get(
+                    "subject",
+                    result.subject,
+                )
+
+                is_assigned = TeachingAssignment.objects.filter(
+                    teacher=teacher_profile,
+                    subject=subject,
+                    class_section=enrollment.class_section,
+                ).exists()
+
+                if not is_assigned:
+                    return Response(
+                        {
+                            "error": (
+                                "You cannot modify a result "
+                                "for a subject and class "
+                                "section you do not teach."
+                            )
+                        },
+                        status=status.HTTP_403_FORBIDDEN,
+                    )
+
             serializer.save()
+
             return Response(serializer.data)
 
         return Response(
@@ -751,8 +866,43 @@ def result_detail(request, result_id):
             status=status.HTTP_400_BAD_REQUEST,
         )
 
-    # DELETE
+    # -------------------------
+    # DELETE RESULT
+    # -------------------------
     if request.method == "DELETE":
+
+        # SECURITY:
+        # Teachers can only delete results for the
+        # subject and class section they teach.
+        if request.user.groups.filter(
+            name="Teacher"
+        ).exists():
+            try:
+                teacher_profile = request.user.teacher_profile
+            except AttributeError:
+                return Response(
+                    {"error": "Teacher profile not found."},
+                    status=status.HTTP_403_FORBIDDEN,
+                )
+
+            is_assigned = TeachingAssignment.objects.filter(
+                teacher=teacher_profile,
+                subject=result.subject,
+                class_section=result.enrollment.class_section,
+            ).exists()
+
+            if not is_assigned:
+                return Response(
+                    {
+                        "error": (
+                            "You cannot delete a result "
+                            "for a subject and class "
+                            "section you do not teach."
+                        )
+                    },
+                    status=status.HTTP_403_FORBIDDEN,
+                )
+
         academic_year = (
             result
             .enrollment
@@ -760,8 +910,8 @@ def result_detail(request, result_id):
             .academic_year
         )
 
-        # Historical results from a closed year
-        # must not be deleted.
+        # Historical results from a closed
+        # academic year cannot be deleted.
         if academic_year.is_closed:
             return Response(
                 {

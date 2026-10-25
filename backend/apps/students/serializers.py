@@ -159,6 +159,29 @@ class AttendanceSerializer(serializers.ModelSerializer):
         read_only_fields = ["id"]
 
     def validate(self, data):
+        # --------------------------------------------------
+        # 1. Once attendance is created, its enrollment
+        #    cannot be changed.
+        #
+        #    An attendance record belongs permanently to
+        #    the student's original enrollment.
+        # --------------------------------------------------
+        if self.instance and "enrollment" in data:
+            if data["enrollment"] != self.instance.enrollment:
+                raise serializers.ValidationError(
+                    {
+                        "enrollment": (
+                            "The enrollment of an existing "
+                            "attendance record cannot be changed."
+                        )
+                    }
+                )
+
+        # --------------------------------------------------
+        # Get enrollment.
+        # For PATCH, enrollment may not be included,
+        # so use the existing enrollment.
+        # --------------------------------------------------
         enrollment = data.get(
             "enrollment",
             getattr(
@@ -168,6 +191,11 @@ class AttendanceSerializer(serializers.ModelSerializer):
             ),
         )
 
+        # --------------------------------------------------
+        # Get attendance date.
+        # For PATCH, date may not be included,
+        # so use the existing date.
+        # --------------------------------------------------
         attendance_date = data.get(
             "date",
             getattr(
@@ -184,8 +212,10 @@ class AttendanceSerializer(serializers.ModelSerializer):
                 .academic_year
             )
 
-            # Attendance cannot be created or changed
-            # for a closed academic year.
+            # --------------------------------------------------
+            # 2. Attendance cannot be created or changed
+            #    for a closed academic year.
+            # --------------------------------------------------
             if academic_year.is_closed:
                 raise serializers.ValidationError(
                     {
@@ -196,8 +226,10 @@ class AttendanceSerializer(serializers.ModelSerializer):
                     }
                 )
 
-            # Attendance date must belong to the
-            # enrollment's academic year.
+            # --------------------------------------------------
+            # 3. Attendance date must belong to the
+            #    enrollment's academic year.
+            # --------------------------------------------------
             if attendance_date:
                 if not (
                     academic_year.start_date

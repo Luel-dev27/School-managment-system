@@ -4,7 +4,7 @@ from rest_framework.authtoken.models import Token
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.response import Response
 from rest_framework import status
-from rest_framework.permissions import IsAuthenticated
+from rest_framework.permissions import IsAuthenticated, AllowAny
 
 from apps.students.models import Student, StudentEnrollment
 from apps.teachers.models import Teacher
@@ -20,6 +20,7 @@ from apps.academics.models import (
 # -------------------------
 
 @api_view(["POST"])
+@permission_classes([AllowAny])
 def login_view(request):
     username = request.data.get("username")
     password = request.data.get("password")

@@ -186,9 +186,48 @@ class ClassSectionSerializer(serializers.ModelSerializer):
         read_only_fields = ["id"]
 
     def validate(self, data):
+        # -----------------------------------------------
+        # Protect the identity of an existing section.
+        # -----------------------------------------------
+        if self.instance:
+            if "grade_level" in data:
+                if (
+                    data["grade_level"]
+                    != self.instance.grade_level
+                ):
+                    raise serializers.ValidationError(
+                        {
+                            "grade_level": (
+                                "The grade level of an existing "
+                                "class section cannot be changed."
+                            )
+                        }
+                    )
+
+            if "academic_year" in data:
+                if (
+                    data["academic_year"]
+                    != self.instance.academic_year
+                ):
+                    raise serializers.ValidationError(
+                        {
+                            "academic_year": (
+                                "The academic year of an existing "
+                                "class section cannot be changed."
+                            )
+                        }
+                    )
+
+        # -----------------------------------------------
+        # Protect closed academic years.
+        # -----------------------------------------------
         academic_year = data.get(
             "academic_year",
-            getattr(self.instance, "academic_year", None),
+            getattr(
+                self.instance,
+                "academic_year",
+                None,
+            ),
         )
 
         if academic_year and academic_year.is_closed:
@@ -214,9 +253,59 @@ class TeachingAssignmentSerializer(serializers.ModelSerializer):
         read_only_fields = ["id"]
 
     def validate(self, data):
+        # -----------------------------------------------
+        # Protect the identity of an existing assignment.
+        # -----------------------------------------------
+        if self.instance:
+            if "teacher" in data:
+                if data["teacher"] != self.instance.teacher:
+                    raise serializers.ValidationError(
+                        {
+                            "teacher": (
+                                "The teacher of an existing "
+                                "teaching assignment cannot "
+                                "be changed."
+                            )
+                        }
+                    )
+
+            if "subject" in data:
+                if data["subject"] != self.instance.subject:
+                    raise serializers.ValidationError(
+                        {
+                            "subject": (
+                                "The subject of an existing "
+                                "teaching assignment cannot "
+                                "be changed."
+                            )
+                        }
+                    )
+
+            if "class_section" in data:
+                if (
+                    data["class_section"]
+                    != self.instance.class_section
+                ):
+                    raise serializers.ValidationError(
+                        {
+                            "class_section": (
+                                "The class section of an existing "
+                                "teaching assignment cannot "
+                                "be changed."
+                            )
+                        }
+                    )
+
+        # -----------------------------------------------
+        # Protect closed academic years.
+        # -----------------------------------------------
         class_section = data.get(
             "class_section",
-            getattr(self.instance, "class_section", None),
+            getattr(
+                self.instance,
+                "class_section",
+                None,
+            ),
         )
 
         if class_section:
@@ -249,6 +338,7 @@ class ResultSerializer(serializers.ModelSerializer):
         read_only_fields = ["id"]
 
     def validate_score(self, value):
+        # Score must always be between 0 and 100.
         if value < 0 or value > 100:
             raise serializers.ValidationError(
                 "Score must be between 0 and 100."
@@ -257,18 +347,76 @@ class ResultSerializer(serializers.ModelSerializer):
         return value
 
     def validate(self, data):
+        # --------------------------------------------------
+        # 1. Existing result enrollment cannot be changed.
+        # --------------------------------------------------
+        if self.instance and "enrollment" in data:
+            if data["enrollment"] != self.instance.enrollment:
+                raise serializers.ValidationError(
+                    {
+                        "enrollment": (
+                            "The enrollment of an existing "
+                            "result cannot be changed."
+                        )
+                    }
+                )
+
+        # --------------------------------------------------
+        # 2. Existing result subject cannot be changed.
+        # --------------------------------------------------
+        if self.instance and "subject" in data:
+            if data["subject"] != self.instance.subject:
+                raise serializers.ValidationError(
+                    {
+                        "subject": (
+                            "The subject of an existing "
+                            "result cannot be changed."
+                        )
+                    }
+                )
+
+        # --------------------------------------------------
+        # 3. Existing result term cannot be changed.
+        # --------------------------------------------------
+        if self.instance and "term" in data:
+            if data["term"] != self.instance.term:
+                raise serializers.ValidationError(
+                    {
+                        "term": (
+                            "The term of an existing "
+                            "result cannot be changed."
+                        )
+                    }
+                )
+
+        # --------------------------------------------------
+        # Get enrollment and subject.
+        #
+        # During PATCH they may not be included, so use
+        # the values from the existing result.
+        # --------------------------------------------------
         enrollment = data.get(
             "enrollment",
-            getattr(self.instance, "enrollment", None),
+            getattr(
+                self.instance,
+                "enrollment",
+                None,
+            ),
         )
 
         subject = data.get(
             "subject",
-            getattr(self.instance, "subject", None),
+            getattr(
+                self.instance,
+                "subject",
+                None,
+            ),
         )
 
-        # Do not allow results to be created or updated
-        # for a closed academic year.
+        # --------------------------------------------------
+        # 4. Results cannot be created or updated
+        #    in a closed academic year.
+        # --------------------------------------------------
         if enrollment:
             academic_year = (
                 enrollment
@@ -286,8 +434,10 @@ class ResultSerializer(serializers.ModelSerializer):
                     }
                 )
 
-        # The subject must be assigned to the
-        # student's class section.
+        # --------------------------------------------------
+        # 5. The subject must actually be assigned to
+        #    the student's class section.
+        # --------------------------------------------------
         if enrollment and subject:
             subject_is_assigned = (
                 TeachingAssignment.objects.filter(
@@ -322,6 +472,30 @@ class TimetableSerializer(serializers.ModelSerializer):
         read_only_fields = ["id"]
 
     def validate(self, data):
+        # --------------------------------------------------
+        # 1. An existing timetable entry cannot be moved
+        #    to another teaching assignment.
+        # --------------------------------------------------
+        if self.instance and "teaching_assignment" in data:
+            if (
+                data["teaching_assignment"]
+                != self.instance.teaching_assignment
+            ):
+                raise serializers.ValidationError(
+                    {
+                        "teaching_assignment": (
+                            "The teaching assignment of an "
+                            "existing timetable entry cannot "
+                            "be changed."
+                        )
+                    }
+                )
+
+        # --------------------------------------------------
+        # Get teaching assignment.
+        # For PATCH, use the existing value when it is
+        # not included in the request.
+        # --------------------------------------------------
         teaching_assignment = data.get(
             "teaching_assignment",
             getattr(
@@ -331,8 +505,9 @@ class TimetableSerializer(serializers.ModelSerializer):
             ),
         )
 
-        # Protect timetable records that belong
-        # to a closed academic year.
+        # --------------------------------------------------
+        # 2. Protect closed academic years.
+        # --------------------------------------------------
         if teaching_assignment:
             academic_year = (
                 teaching_assignment
@@ -351,6 +526,14 @@ class TimetableSerializer(serializers.ModelSerializer):
                     }
                 )
 
+        # --------------------------------------------------
+        # Build a temporary timetable object so the model's
+        # clean() method can check:
+        #
+        # - start time < end time
+        # - class-section conflicts
+        # - teacher conflicts
+        # --------------------------------------------------
         timetable = Timetable(
             teaching_assignment=teaching_assignment,
             day_of_week=data.get(
@@ -379,8 +562,10 @@ class TimetableSerializer(serializers.ModelSerializer):
             ),
         )
 
-        # For PATCH/PUT, exclude the current
-        # timetable from conflict checking.
+        # --------------------------------------------------
+        # 3. When updating an existing timetable entry,
+        #    exclude that same entry from conflict checking.
+        # --------------------------------------------------
         if self.instance:
             timetable.pk = self.instance.pk
 
