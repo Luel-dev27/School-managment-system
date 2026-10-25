@@ -15,7 +15,7 @@ class StudentSerializer(serializers.ModelSerializer):
             "grade_level",
             "status",
         ]
-        read_only_fields = ["id", "enrollment_date", "status"]
+        read_only_fields = ["id", "enrollment_date", "grade_level", "status"]
 
 
 class StudentEnrollmentSerializer(serializers.ModelSerializer):

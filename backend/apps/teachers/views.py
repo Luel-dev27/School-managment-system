@@ -1,5 +1,8 @@
 from django.db.models import Q
 
+
+from django.db.models.deletion import ProtectedError
+
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.response import Response
 from rest_framework import status
@@ -61,36 +64,37 @@ def teacher_list(request):
 @permission_classes([CanAccessTeachers])
 def teacher_detail(request, teacher_id):
 
-    # Find the teacher using their database ID
+    # Find the teacher by database ID.
     try:
         teacher = Teacher.objects.get(id=teacher_id)
 
     except Teacher.DoesNotExist:
         return Response(
-            {"error": "Teacher not found"},
-            status=status.HTTP_404_NOT_FOUND
+            {"error": "Teacher not found."},
+            status=status.HTTP_404_NOT_FOUND,
         )
 
-    # Retrieve one teacher
+    # READ
     if request.method == "GET":
         serializer = TeacherSerializer(teacher)
         return Response(serializer.data)
 
-    # Replace the teacher's editable data
+    # FULL UPDATE
     elif request.method == "PUT":
         serializer = TeacherSerializer(
             teacher,
-            data=request.data
+            data=request.data,
         )
 
-    # Update only selected fields
+    # PARTIAL UPDATE
     elif request.method == "PATCH":
         serializer = TeacherSerializer(
             teacher,
             data=request.data,
-            partial=True
+            partial=True,
         )
 
+    # SAVE UPDATE
     if request.method in ["PUT", "PATCH"]:
         if serializer.is_valid():
             serializer.save()
@@ -98,10 +102,25 @@ def teacher_detail(request, teacher_id):
 
         return Response(
             serializer.errors,
-            status=status.HTTP_400_BAD_REQUEST
+            status=status.HTTP_400_BAD_REQUEST,
         )
 
-    # Delete the teacher
+    # DELETE
     elif request.method == "DELETE":
-        teacher.delete()
-        return Response(status=status.HTTP_204_NO_CONTENT)
+        try:
+            teacher.delete()
+
+        except ProtectedError:
+            return Response(
+                {
+                    "error": (
+                        "This teacher cannot be deleted because "
+                        "academic records depend on them."
+                    )
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        return Response(
+            status=status.HTTP_204_NO_CONTENT,
+        )

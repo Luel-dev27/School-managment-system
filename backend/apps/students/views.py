@@ -1,5 +1,6 @@
 from django.db.models import Q
 from django.db import transaction
+from django.db.models.deletion import ProtectedError
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.response import Response
 from rest_framework import status
@@ -89,18 +90,17 @@ def student_list(request):
 @permission_classes([CanAccessStudents])
 def student_detail(request, student_id):
 
-    # Find the student by database ID
+    # Find the student by database ID.
     try:
         student = Student.objects.get(id=student_id)
 
     except Student.DoesNotExist:
         return Response(
-            {"error": "Student not found"},
+            {"error": "Student not found."},
             status=status.HTTP_404_NOT_FOUND,
         )
 
-    # SECURITY:
-    # A logged-in Student can only access their own profile.
+    # Student users can only access their own profile.
     if request.user.groups.filter(name="Student").exists():
         try:
             student_profile = request.user.student_profile
@@ -111,27 +111,25 @@ def student_detail(request, student_id):
                 status=status.HTTP_403_FORBIDDEN,
             )
 
-        # Block access if this is another student's profile
         if student.id != student_profile.id:
             return Response(
                 {"error": "You cannot access this student."},
                 status=status.HTTP_403_FORBIDDEN,
             )
 
-    # READ: Get one student's information
+    # READ
     if request.method == "GET":
         serializer = StudentSerializer(student)
-
         return Response(serializer.data)
 
-    # UPDATE: Replace all submitted student information
+    # FULL UPDATE
     elif request.method == "PUT":
         serializer = StudentSerializer(
             student,
             data=request.data,
         )
 
-    # PARTIAL UPDATE: Change only submitted fields
+    # PARTIAL UPDATE
     elif request.method == "PATCH":
         serializer = StudentSerializer(
             student,
@@ -139,11 +137,10 @@ def student_detail(request, student_id):
             partial=True,
         )
 
-    # Save PUT or PATCH changes
+    # SAVE UPDATE
     if request.method in ["PUT", "PATCH"]:
         if serializer.is_valid():
             serializer.save()
-
             return Response(serializer.data)
 
         return Response(
@@ -151,9 +148,21 @@ def student_detail(request, student_id):
             status=status.HTTP_400_BAD_REQUEST,
         )
 
-    # DELETE: Remove the student
+    # DELETE
     elif request.method == "DELETE":
-        student.delete()
+        try:
+            student.delete()
+
+        except ProtectedError:
+            return Response(
+                {
+                    "error": (
+                        "This student cannot be deleted because "
+                        "historical records depend on it."
+                    )
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
 
         return Response(
             status=status.HTTP_204_NO_CONTENT,
