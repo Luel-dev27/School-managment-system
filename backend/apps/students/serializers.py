@@ -36,7 +36,8 @@ class StudentEnrollmentSerializer(serializers.ModelSerializer):
 
     def validate(self, data):
         # --------------------------------------------------
-        # 1. Existing enrollment cannot change its student.
+        # 1. Once an enrollment is created, its student
+        #    cannot be changed.
         # --------------------------------------------------
         if self.instance and "student" in data:
             if data["student"] != self.instance.student:
@@ -50,42 +51,28 @@ class StudentEnrollmentSerializer(serializers.ModelSerializer):
                 )
 
         # --------------------------------------------------
-        # 2. Historical enrollments cannot be modified.
+        # 2. Once an enrollment is created, its class
+        #    section cannot be changed directly.
+        #
+        #    Student movement must use the dedicated
+        #    lifecycle workflows:
+        #    promote, repeat, transfer, or graduate.
         # --------------------------------------------------
-        if self.instance and self.instance.status in [
-            StudentEnrollment.Status.COMPLETED,
-            StudentEnrollment.Status.TRANSFERRED,
-        ]:
-            protected_fields = [
-                "student",
-                "class_section",
-            ]
-
-            changed_fields = []
-
-            for field in protected_fields:
-                if field in data:
-                    old_value = getattr(
-                        self.instance,
-                        field,
-                    )
-                    new_value = data[field]
-
-                    if new_value != old_value:
-                        changed_fields.append(field)
-
-            if changed_fields:
+        if self.instance and "class_section" in data:
+            if data["class_section"] != self.instance.class_section:
                 raise serializers.ValidationError(
                     {
-                        "error": (
-                            "Completed or transferred "
-                            "enrollments cannot be modified."
+                        "class_section": (
+                            "The class section of an existing "
+                            "enrollment cannot be changed. "
+                            "Use the student lifecycle "
+                            "workflow instead."
                         )
                     }
                 )
 
         # --------------------------------------------------
-        # Get student and class section.
+        # Get the student and class section.
         # --------------------------------------------------
         student = data.get(
             "student",
@@ -118,7 +105,10 @@ class StudentEnrollmentSerializer(serializers.ModelSerializer):
             )
 
         # --------------------------------------------------
-        # 4. Student can have only one active enrollment.
+        # 4. A student can have only one active enrollment.
+        #    This validation gives a clean API error.
+        #    The database constraint remains the final
+        #    safety layer.
         # --------------------------------------------------
         if not self.instance and student:
             active_enrollment_exists = (
@@ -139,10 +129,10 @@ class StudentEnrollmentSerializer(serializers.ModelSerializer):
                 )
 
         # --------------------------------------------------
-        # 5. Closed academic years cannot receive
-        #    new or moved enrollments.
+        # 5. New enrollments cannot be created inside
+        #    a closed academic year.
         # --------------------------------------------------
-        if class_section:
+        if not self.instance and class_section:
             academic_year = class_section.academic_year
 
             if academic_year.is_closed:
